@@ -311,7 +311,7 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
                         val audio = p.choices.getOrNull(pick)?.audioOnly == true
                         val folder = if (audio) "Music" else "Video"
                         InfoRow("Saved to", "Downloads/Nexonic" + if (Downloads.settings.categoryFolders) "/$folder" else "")
-                        InfoRow("Resume", "Yes")
+                        InfoRow("Resume", "Best effort (yt-dlp)")
                     }
                     if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp))

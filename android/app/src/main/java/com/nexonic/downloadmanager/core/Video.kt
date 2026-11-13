@@ -158,6 +158,8 @@ object VideoPages {
             .replace(Regex("\\s*\\(caused by .*$"), "").trim()
         val l = clean.lowercase()
         return when {
+            "http error 403" in l || "403: forbidden" in l ->
+                "Media server denied this stream (HTTP 403). Update the video engine in Settings, then retry. If it persists, the selected format or site access may be restricted."
             "unable to extract" in l -> "This site changed its pages, so they can't be read right now. Nexonic updates its video engine automatically; try again later."
             "unable to connect to proxy" in l -> "The site could not be reached. Check the connection (and the proxy, if one is set) and try again."
             "unsupported url" in l -> "No video found on this page."

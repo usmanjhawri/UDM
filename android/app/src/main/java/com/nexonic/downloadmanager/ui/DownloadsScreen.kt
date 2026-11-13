@@ -362,7 +362,7 @@ fun DetailSheet(item: DownloadItem, onDismiss: () -> Unit, message: (String) -> 
                 InfoRow("Speed", Format.speed(item.speed).ifEmpty { "…" })
                 InfoRow("Time left", Format.eta(item.etaSeconds).ifEmpty { "…" })
             }
-            InfoRow("Resume", if (item.resumable) "Yes" else "No")
+            InfoRow("Resume", if (item.isVideo) "Best effort (yt-dlp)" else if (item.resumable) "Yes" else "No")
             item.torrent?.let { t ->
                 fun count(n: Int, total: Int) = if (total >= 0) "$n ($total)" else "$n"
                 InfoRow("Files", "${t.selectedFiles.size} of ${t.files.count { !it.pad }}")
@@ -378,7 +378,6 @@ fun DetailSheet(item: DownloadItem, onDismiss: () -> Unit, message: (String) -> 
             item.savedPath?.let { InfoRow("Saved to", it) }
             InfoRow("Added", Format.date(item.addedAt))
             item.finishedAt?.let { InfoRow("Finished", Format.date(it)) }
-            if (!item.isFinished && !item.isTorrent) InfoRow("Can resume", tr(if (item.resumable || item.isVideo) "Yes" else "No"))
             item.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
             item.state?.takeIf { it.segments.size > 1 && it.size != null && item.status != Status.COMPLETE }?.let { st ->
