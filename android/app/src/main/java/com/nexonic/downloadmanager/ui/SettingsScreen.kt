@@ -88,6 +88,26 @@ fun SettingsScreen(message: (String) -> Unit) {
     var languageDialog by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
+    val pickEngineFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !updating) {
+            updating = true
+            Thread {
+                val outcome = runCatching { VideoEngine.importVerifiedRelease(uri) }
+                val version = VideoEngine.version()
+                val problem = VideoEngine.lastProblem()
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    updating = false
+                    engineVersion = version
+                    engineVersionChecked = true
+                    engineProblem = problem
+                    message(if (outcome.isSuccess) {
+                        "Verified yt-dlp " + outcome.getOrNull() + " installed"
+                    } else "Offline import failed. See Video engine status.")
+                }
+            }.start()
+        }
+    }
+
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -181,7 +201,7 @@ fun SettingsScreen(message: (String) -> Unit) {
                 Text("Engine status: $problem", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = {
-                    copy(context, "Nexonic Personal v0.5.1 | yt-dlp: " +
+                    copy(context, "Nexonic Personal v0.5.2 | yt-dlp: " +
                         (engineVersion ?: "unavailable") + " | " + problem)
                     message("Diagnostic copied")
                 }) { Text("Copy safe diagnostic") }
@@ -190,6 +210,14 @@ fun SettingsScreen(message: (String) -> Unit) {
                 modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(if (updating) "Updating…" else "Check for updates")
             }
+            OutlinedButton(enabled = !updating,
+                onClick = { pickEngineFile.launch(arrayOf("*/*")) },
+                modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Import verified yt-dlp file")
+            }
+            Text("Select the official 2026.10.26 file from Downloads; its SHA-256 is checked before installation.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             SlimSection("Advanced")
             TextButton(onClick = { advanced = !advanced }, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -278,7 +306,7 @@ fun SettingsScreen(message: (String) -> Unit) {
             }
 
             SlimSection("About")
-            Text("Nexonic Personal v0.5.1 · Core " + BuildConfig.VERSION_NAME,
+            Text("Nexonic Personal v0.5.2 · Core " + BuildConfig.VERSION_NAME,
                 style = MaterialTheme.typography.bodyMedium)
             Text("Based on Nexonic Download Manager. Free and open source.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
