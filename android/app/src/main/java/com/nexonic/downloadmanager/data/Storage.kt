@@ -139,8 +139,6 @@ class Settings(context: Context) {
     var colorScheme: String get() = p.getString("colorScheme", "") ?: ""; set(v) = p.edit().putString("colorScheme", v).apply()
     var debridService: String get() = p.getString("debridService", "NONE") ?: "NONE"; set(v) = p.edit().putString("debridService", v).apply()
     var debridHosts: String get() = p.getString("debridHosts", "") ?: ""; set(v) = p.edit().putString("debridHosts", v.trim()).apply()
-    /** RSS feeds and their rules, as JSON. */
-    var feeds: String get() = p.getString("feeds", "[]") ?: "[]"; set(v) = p.edit().putString("feeds", v).apply()
     var torrentBlocklist: String get() = p.getString("torrentBlocklist", "") ?: ""; set(v) = p.edit().putString("torrentBlocklist", v.trim()).apply()
     var vpnOnly: Boolean get() = p.getBoolean("vpnOnly", false); set(v) = p.edit().putBoolean("vpnOnly", v).apply()
     var askBeforeDownload: Boolean get() = p.getBoolean("ask", true); set(v) = p.edit().putBoolean("ask", v).apply()

@@ -49,12 +49,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.nexonic.downloadmanager.BuildConfig
-import com.nexonic.downloadmanager.browser.Browser
 import com.nexonic.downloadmanager.data.Downloads
 import com.nexonic.downloadmanager.service.Scheduler
 
 @Composable
-fun SettingsScreen(browser: Browser, message: (String) -> Unit) {
+fun SettingsScreen(message: (String) -> Unit) {
     val s = Downloads.settings
     val context = LocalContext.current
     var connections by remember { mutableFloatStateOf(s.connections.toFloat()) }

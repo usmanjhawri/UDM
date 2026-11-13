@@ -53,7 +53,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.nexonic.downloadmanager.browser.Offer
+import com.nexonic.downloadmanager.core.Offer
 import com.nexonic.downloadmanager.core.CurlCommand
 import com.nexonic.downloadmanager.core.tr
 import com.nexonic.downloadmanager.core.BatchPattern
