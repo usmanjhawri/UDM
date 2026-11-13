@@ -59,6 +59,9 @@ object VideoEngine {
             if (ready) return
             try {
                 YoutubeDL.getInstance().init(app)
+                // Fresh installs get a verified working engine even when the release
+                // API or asset CDN is blocked from Android's HTTP stack.
+                BundledYtDlpBootstrap.installIfNeeded(app)
                 // Old native FFmpeg packages are no longer used: the APK ships its own FFmpeg.
                 File(app.noBackupFilesDir, "youtubedl-android/packages/ffmpeg")
                     .takeIf { it.exists() }?.deleteRecursively()
@@ -84,7 +87,8 @@ object VideoEngine {
         val lastAttempt = prefs.getLong("lastAttempt", 0)
         if (now - lastAttempt < 60L * 60 * 1000) return@synchronized
         prefs.edit().putLong("lastAttempt", now).apply()
-        YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)
+        val result = VerifiedYtDlpUpdater.update(app, YoutubeDL.getInstance().version(app))
+        if (result == "DEFERRED_ACTIVE_DOWNLOADS") return@synchronized
         prefs.edit().putLong("updated", System.currentTimeMillis()).apply()
         updateError = null
     }
@@ -93,7 +97,7 @@ object VideoEngine {
     fun version(): String? = runCatching {
         synchronized(updateLock) {
             ensure()
-            YoutubeDL.getInstance().versionName(app) ?: YoutubeDL.getInstance().version(app)
+            YoutubeDL.getInstance().version(app) ?: "Bundled (no update recorded)"
         }
     }.onFailure {
         initError = EngineUpdateDiagnostics.describe(it)
@@ -107,13 +111,17 @@ object VideoEngine {
     fun updateNow(nightly: Boolean = false): String = synchronized(updateLock) {
         try {
             ensure()
-            val channel = if (nightly) YoutubeDL.UpdateChannel.NIGHTLY else YoutubeDL.UpdateChannel.STABLE
-            val result = YoutubeDL.getInstance().updateYoutubeDL(app, channel)
-            app.getSharedPreferences("video-engine", Context.MODE_PRIVATE).edit()
-                .putLong("updated", System.currentTimeMillis())
-                .putLong("lastAttempt", System.currentTimeMillis()).apply()
-            updateError = null
-            result?.name ?: "DONE"
+            if (nightly) {
+                throw VideoException("Nightly updates are disabled until independent release verification is available.")
+            }
+            val result = VerifiedYtDlpUpdater.update(app, YoutubeDL.getInstance().version(app))
+            if (result != "DEFERRED_ACTIVE_DOWNLOADS") {
+                app.getSharedPreferences("video-engine", Context.MODE_PRIVATE).edit()
+                    .putLong("updated", System.currentTimeMillis())
+                    .putLong("lastAttempt", System.currentTimeMillis()).apply()
+                updateError = null
+            }
+            result
         } catch (e: Throwable) {
             updateError = EngineUpdateDiagnostics.describe(e)
             Log.w(TAG, "yt-dlp update failed", e)
