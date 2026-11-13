@@ -341,10 +341,10 @@ object VideoEngine {
         } catch (e: VideoException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "format inspection failed; no URL logged", e)
+            Log.w(TAG, "format inspection failed (type=" + e.javaClass.simpleName + ")")
             throw VideoException(VideoPages.friendlyError(e.message))
         } catch (e: Throwable) {
-            Log.e(TAG, "format inspection failed", e)
+            Log.e(TAG, "format inspection failed (type=" + e.javaClass.simpleName + ")")
             throw VideoException(VideoPages.engineError(e.javaClass.simpleName, e.message))
         }
     }
