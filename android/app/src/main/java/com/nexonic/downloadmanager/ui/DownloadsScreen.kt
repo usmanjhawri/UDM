@@ -190,7 +190,7 @@ fun DownloadsScreen(items: List<DownloadItem>, ui: UiState) {
             SecondaryTabRow(selectedTabIndex = view.ordinal) {
                 View.entries.forEach { v ->
                     val count = items.count { when (v) { View.ALL -> true; View.UNFINISHED -> it.status != Status.COMPLETE; View.FINISHED -> it.status == Status.COMPLETE } }
-                    val short = when (v) { View.ALL -> tr("All"); View.UNFINISHED -> tr("Active"); View.FINISHED -> tr("Done") }
+                    val short = when (v) { View.ALL -> tr("All"); View.UNFINISHED -> tr("Unfinished"); View.FINISHED -> tr("Done") }
                     Tab(selected = view == v, onClick = { view = v }, text = { Text("$short $count", maxLines = 1) })
                 }
             }
