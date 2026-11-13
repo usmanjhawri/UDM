@@ -155,7 +155,7 @@ object VideoPages {
             "anti-bot" in l || "cloudflare" in l ->
                 "This site requires browser verification. Nexonic Personal has no embedded browser; try a public media link."
             "sign in" in l || "login" in l || "log in" in l || "cookies" in l ->
-                "This video requires sign-in. Nexonic Personal no longer provides in-app browser cookies."
+                "This video needs you to be signed in. Nexonic Personal no longer provides in-app browser cookies."
             "private" in l -> "This video is private."
             "not available" in l || "unavailable" in l -> "This video is not available."
             "unable to download webpage" in l || "network" in l || "timed out" in l -> "Could not reach the site. Check the connection and try again."
