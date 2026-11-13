@@ -1,3 +1,9 @@
+import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -126,9 +132,9 @@ val preparePinnedYtDlp = tasks.register("preparePinnedYtDlp") {
     group = "build setup"
     description = "Fetch and SHA-256 verify yt-dlp for all Android build environments"
     doLast {
-        fun verified(file: java.io.File): Boolean {
+        fun verified(file: File): Boolean {
             if (!file.isFile || file.length() != 3_073_072L) return false
-            val hash = java.security.MessageDigest.getInstance("SHA-256")
+            val hash = MessageDigest.getInstance("SHA-256")
             file.inputStream().use { input ->
                 val bytes = ByteArray(32 * 1024)
                 while (true) {
@@ -142,12 +148,12 @@ val preparePinnedYtDlp = tasks.register("preparePinnedYtDlp") {
         if (pinnedYtDlp.exists()) {
             if (!verified(pinnedYtDlp)) throw GradleException("Bundled yt-dlp exists but has the wrong SHA-256; refusing to package it")
         } else {
-            val partial = java.io.File(pinnedYtDlp.parentFile, pinnedYtDlp.name + ".download")
+            val partial = File(pinnedYtDlp.parentFile, pinnedYtDlp.name + ".download")
             try {
                 pinnedYtDlp.parentFile.mkdirs()
-                val connection = (java.net.URI(
+                val connection = (URI(
                     "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp"
-                ).toURL().openConnection() as java.net.HttpURLConnection).apply {
+                ).toURL().openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = true
                     connectTimeout = 15_000
                     readTimeout = 60_000
@@ -155,7 +161,7 @@ val preparePinnedYtDlp = tasks.register("preparePinnedYtDlp") {
                 }
                 try {
                     if (connection.responseCode != 200) {
-                        throw java.io.IOException("GitHub returned HTTP " + connection.responseCode)
+                        throw IOException("GitHub returned HTTP " + connection.responseCode)
                     }
                     connection.inputStream.use { source ->
                         partial.outputStream().use { out -> source.copyTo(out) }
@@ -164,7 +170,7 @@ val preparePinnedYtDlp = tasks.register("preparePinnedYtDlp") {
                     connection.disconnect()
                 }
                 if (!verified(partial)) throw GradleException("Official yt-dlp download failed SHA-256 verification")
-                if (!partial.renameTo(pinnedYtDlp)) throw java.io.IOException("Could not activate verified build asset")
+                if (!partial.renameTo(pinnedYtDlp)) throw IOException("Could not activate verified build asset")
             } catch (e: Exception) {
                 partial.delete()
                 if (releaseBuild) throw GradleException("Release requires verified bundled yt-dlp. Download it or build with network access.", e)
