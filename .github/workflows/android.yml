@@ -82,6 +82,10 @@ jobs:
           set -e
           mkdir -p out
           DBG=android/app/build/outputs/apk/debug/app-debug.apk
+          # Preserve Gradle's automatically signed debug APK for on-device handoff QA.
+          # The release APKs below remain unsigned until a release key is configured.
+          test -s "$DBG"
+          cp "$DBG" out/NexonicDownloadManager-Android-debug.apk
           R=android/app/build/outputs/apk/release
           ls -la $R
           # One release APK per processor type: arm64 (almost every phone) and 32-bit ARM (older phones).
@@ -114,6 +118,8 @@ jobs:
           else
             echo "Release APK is unsigned: set the NDM_ANDROID_* secrets (android/setup-android-signing.sh)."
           fi
+          echo "Debug APK signing verification:"
+          "$BT/apksigner" verify --verbose "$DBG" | grep -E "Verified using|Number of signers"
           "$AAPT" dump badging $DBG | grep -E "^package|sdkVersion|targetSdk|native-code"
           "$AAPT" dump permissions $DBG
           ls -la out
