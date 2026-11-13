@@ -27,8 +27,8 @@ android {
         val version = rootProject.file("../VERSION").readText().trim()
         val (major, minor, patch) = version.split(".").map { it.takeWhile(Char::isDigit).ifEmpty { "0" }.toInt() }
         // Dedicated Personal package: increment this code for all future in-place updates.
-        versionCode = 60100
-        versionName = "0.6.1"
+        versionCode = 60200
+        versionName = "0.6.2"
         // The video engine (Python, yt-dlp, ffmpeg) is native code. Debug builds: phones (ARM) plus x86_64 for emulators.
         // Release builds pick their processor types with the splits below (Gradle refuses both at once).
         if (!releaseBuild) ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
@@ -70,7 +70,7 @@ android {
         }
         debug {
             // Side-by-side QA package: never replace existing .debug installs or delete their data.
-            applicationIdSuffix = ".qa1"
+            applicationIdSuffix = ".qa2"
             versionNameSuffix = "-qa"
         }
     }

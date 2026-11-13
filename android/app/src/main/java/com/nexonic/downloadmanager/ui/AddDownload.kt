@@ -131,6 +131,7 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
         l.distinct()
     }
     val single = links.singleOrNull()
+    var fullInspection by remember(single) { mutableStateOf(false) }
     // A link that is already in the list (or was downloaded before) is pointed out; adding it again saves a new copy.
     val repeat = remember(links) {
         val list = Downloads.items.value
@@ -138,7 +139,7 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
     }
 
     // Ask the server for the name and size of a single link.
-    LaunchedEffect(single, user, password, inspectionAttempt) {
+    LaunchedEffect(single, user, password, inspectionAttempt, fullInspection) {
         probe = null; problem = null; page = null; isVideo = false; pick = 0; audioTab = false
         if (single == null) return@LaunchedEffect
         if (!compactHandoff) delay(350)
@@ -164,7 +165,7 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
         }
         if (isVideo) {
             reading = true
-            val read = withContext(Dispatchers.IO) { runCatching { VideoEngine.read(single, offer?.userAgent, offer?.referer) } }
+            val read = withContext(Dispatchers.IO) { runCatching { VideoEngine.read(single, offer?.userAgent, offer?.referer, forceFull = fullInspection) } }
             reading = false
             read.onSuccess { p ->
                 page = p
@@ -360,6 +361,27 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
                                     }
                                 }
                             }
+                        }
+                        if (p.quickPreview) {
+                            Row(Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text("Quick preview · some formats may be omitted",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f))
+                                TextButton(
+                                    onClick = { fullInspection = true },
+                                    modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Text("Full list")
+                                }
+                            }
+                        }
+                        if (compactHandoff && p.inspectionMs > 0 && (advanced || p.cached)) {
+                            Text(if (p.cached) "Instant · cached preview" else
+                                "Format inspection: " + String.format(java.util.Locale.US, "%.1f s", p.inspectionMs / 1000.0),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         val audio = p.choices.getOrNull(pick)?.audioOnly == true
                         val folder = if (audio) "Music" else "Video"

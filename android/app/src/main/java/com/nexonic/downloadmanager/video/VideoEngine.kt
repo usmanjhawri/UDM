@@ -9,6 +9,8 @@ import com.nexonic.downloadmanager.core.VideoChoice
 import com.nexonic.downloadmanager.core.VideoPages
 import com.nexonic.downloadmanager.core.Playlists
 import com.nexonic.downloadmanager.core.EngineUpdateDiagnostics
+import com.nexonic.downloadmanager.core.PreviewMemoryCache
+import com.nexonic.downloadmanager.core.YouTubePreviewPolicy
 import com.nexonic.downloadmanager.core.OfficialYtDlpRelease
 import com.nexonic.downloadmanager.data.Downloads
 import com.nexonic.downloadmanager.data.Status
@@ -20,9 +22,15 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.FutureTask
 
 /** What the video engine found on a page. */
-data class VideoPage(val title: String?, val choices: List<VideoChoice>, val durationSeconds: Int)
+data class VideoPage(
+    val title: String?, val choices: List<VideoChoice>, val durationSeconds: Int,
+    val quickPreview: Boolean = false, val inspectionMs: Long = 0L, val cached: Boolean = false,
+)
 
 class VideoException(message: String) : Exception(message)
 
@@ -34,6 +42,9 @@ object VideoEngine {
     private val lock = Any()
     // The library must never update its Python/yt-dlp files concurrently with another update.
     private val updateLock = Any()
+    // No signed stream URLs are stored: only title, duration and quality selectors.
+    private val previews = PreviewMemoryCache<VideoPage>(maxEntries = 12, ttlMs = 120_000)
+    private val pendingPreviews = ConcurrentHashMap<String, FutureTask<VideoPage>>()
     @Volatile private var ready = false
     private lateinit var app: Context
     @Volatile private var updateError: String? = null
@@ -106,7 +117,7 @@ object VideoEngine {
         if (result == "DEFERRED_ACTIVE_DOWNLOADS") return@synchronized
         prefs.edit().putLong("updated", System.currentTimeMillis()).apply()
         updateError = null
-        if (result == "DONE") bootstrapWarning = null
+        if (result == "DONE") { bootstrapWarning = null; previews.clear() }
     }
 
     /** Initialize before version lookup and serialize with the update operation. */
@@ -137,6 +148,7 @@ object VideoEngine {
                     .putLong("lastAttempt", System.currentTimeMillis()).apply()
                 updateError = null
                 bootstrapWarning = null
+                if (result == "DONE") previews.clear()
             }
             result
         } catch (e: Throwable) {
@@ -211,6 +223,7 @@ object VideoEngine {
             updateError = null
             initError = null
             bootstrapWarning = null
+            previews.clear()
             if (backupMade) backup.delete()
             return@synchronized release.TAG
         } catch (e: Exception) {
@@ -236,30 +249,104 @@ object VideoEngine {
         referer?.let { addOption("--referer", it) }
     }
 
-    /** Reads the page: title and quality choices. Throws [VideoException] with a readable message. */
-    fun read(url: String, userAgent: String? = null, referer: String? = null): VideoPage {
+    /**
+     * Optimized YouTube VOD format preview. The fast variant skips only YouTube's
+     * initial-data/next request. It does not skip JS, player configuration or
+     * webpage parsing, and the actual download always uses normal yt-dlp settings.
+     *
+     * Incomplete/failed quick results automatically fall back to full extraction.
+     * Users can explicitly request a complete refresh from the format sheet.
+     */
+    fun read(
+        url: String, userAgent: String? = null, referer: String? = null,
+        forceFull: Boolean = false,
+    ): VideoPage {
+        val key = if (userAgent == null && referer == null) YouTubePreviewPolicy.canonicalId(url) else null
+        if (!forceFull && key != null) {
+            previews.find(key)?.let {
+                Log.i(TAG, "format preview cache hit, qualityCount=" + it.choices.size)
+                return it.copy(cached = true)
+            }
+        }
+        // Coalesce simultaneous inspections of the same public video. Private
+        // header/cookie contexts never participate in deduplication or caching.
+        if (key != null) {
+            val inFlightKey = key + if (forceFull) "|full" else "|quick"
+            val task = pendingPreviews.computeIfAbsent(inFlightKey) {
+                FutureTask {
+                    inspect(url, userAgent, referer, forceFull).also { result ->
+                        val previous = previews.find(key)
+                        if (!result.quickPreview || previous == null || previous.quickPreview) {
+                            previews.save(key, result.copy(cached = false))
+                        }
+                    }
+                }
+            }
+            try {
+                task.run()
+                return task.get()
+            } catch (e: ExecutionException) {
+                throw (e.cause as? VideoException ?: VideoException(VideoPages.friendlyError(e.cause?.message)))
+            } finally {
+                pendingPreviews.remove(inFlightKey, task)
+            }
+        }
+        return inspect(url, userAgent, referer, forceFull)
+    }
+
+    private fun inspect(
+        url: String, userAgent: String?, referer: String?, forceFull: Boolean,
+    ): VideoPage {
+        val started = System.nanoTime()
         ensure()
         val target = resolve(url)
-        val info = try {
-            YoutubeDL.getInstance().getInfo(base(target, userAgent, referer))
+        val isPublicVOD = YouTubePreviewPolicy.canonicalId(target) != null &&
+            userAgent == null && referer == null && !forceFull
+
+        fun extract(quick: Boolean): Pair<VideoPage, Boolean> {
+            val req = base(target, userAgent, referer)
+            if (quick) req.addOption("--extractor-args", YouTubePreviewPolicy.FAST_EXTRACTOR_ARGS)
+            val info = YoutubeDL.getInstance().getInfo(req)
+            val formats = info.formats.orEmpty().map { f ->
+                StreamFormat(
+                    height = f.height,
+                    // Some sites omit codec fields. Retain established classification.
+                    hasVideo = if (f.vcodec == null) f.height > 0 else f.vcodec != "none",
+                    hasAudio = if (f.acodec == null) f.vcodec == null else f.acodec != "none",
+                    ext = f.ext,
+                    size = f.fileSize.takeIf { it > 0 } ?: f.fileSizeApproximate.takeIf { it > 0 },
+                )
+            }
+            val hasVideo = formats.any { it.hasVideo }
+            val hasAudio = formats.any { it.hasAudio }
+            val page = VideoPage(info.title, VideoPages.choices(formats), info.duration)
+            return page to (hasVideo && hasAudio && page.choices.isNotEmpty())
+        }
+
+        try {
+            if (isPublicVOD) {
+                val fast = runCatching { extract(true) }
+                if (fast.isSuccess && fast.getOrThrow().second) {
+                    val total = (System.nanoTime() - started) / 1_000_000
+                    val result = fast.getOrThrow().first.copy(quickPreview = true, inspectionMs = total)
+                    Log.i(TAG, "format inspection mode=quick elapsedMs=$total choices=" + result.choices.size)
+                    return result
+                }
+                Log.i(TAG, "format quick inspection incomplete/unavailable; using full metadata")
+            }
+            val full = extract(false).first
+            val total = (System.nanoTime() - started) / 1_000_000
+            Log.i(TAG, "format inspection mode=full elapsedMs=$total choices=" + full.choices.size)
+            return full.copy(quickPreview = false, inspectionMs = total)
+        } catch (e: VideoException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "read failed", e)
+            Log.w(TAG, "format inspection failed (type=" + e.javaClass.simpleName + ")")
             throw VideoException(VideoPages.friendlyError(e.message))
         } catch (e: Throwable) {
-            Log.e(TAG, "read failed", e)
+            Log.e(TAG, "format inspection failed (type=" + e.javaClass.simpleName + ")")
             throw VideoException(VideoPages.engineError(e.javaClass.simpleName, e.message))
         }
-        val formats = info.formats.orEmpty().map { f ->
-            StreamFormat(
-                height = f.height,
-                // Some sites (Instagram, Facebook) leave the codecs out: a format with a height is a video then.
-                hasVideo = if (f.vcodec == null) f.height > 0 else f.vcodec != "none",
-                hasAudio = if (f.acodec == null) f.vcodec == null else f.acodec != "none",
-                ext = f.ext,
-                size = f.fileSize.takeIf { it > 0 } ?: f.fileSizeApproximate.takeIf { it > 0 },
-            )
-        }
-        return VideoPage(info.title, VideoPages.choices(formats), info.duration)
     }
 
     /**
