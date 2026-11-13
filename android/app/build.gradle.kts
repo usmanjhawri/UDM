@@ -63,7 +63,7 @@ android {
         }
         debug {
             // Side-by-side QA package: never replace existing .debug installs or delete their data.
-            applicationIdSuffix = ".diagnostic"
+            applicationIdSuffix = ".offlineqa"
             versionNameSuffix = "-debug"
         }
     }
