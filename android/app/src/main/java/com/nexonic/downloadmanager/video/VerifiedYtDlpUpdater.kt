@@ -43,8 +43,17 @@ object VerifiedYtDlpUpdater {
     private fun latest(): Candidate {
         val connection = connect(API, "application/vnd.github+json")
         val json = try {
-            val payload = connection.inputStream.use { it.readNBytes(META_LIMIT + 1) }
-            if (payload.size > META_LIMIT) throw IOException("GitHub response exceeds safe size")
+            val payload = connection.inputStream.use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (out.size() + count > META_LIMIT) throw IOException("GitHub response exceeds safe size")
+                    out.write(buffer, 0, count)
+                }
+                out.toByteArray()
+            }
             JSONObject(String(payload, Charsets.UTF_8))
         } finally {
             connection.disconnect()
