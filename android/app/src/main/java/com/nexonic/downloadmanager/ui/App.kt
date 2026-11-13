@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.nexonic.downloadmanager.Tab
@@ -47,6 +48,7 @@ import com.nexonic.downloadmanager.data.Status
 @Composable
 fun App(ui: UiState, browser: Browser) {
     val items by Downloads.items.collectAsState()
+    val hostActivity = LocalContext.current as? android.app.Activity
     val snackbar = remember { SnackbarHostState() }
     val active = items.count { it.status == Status.DOWNLOADING || it.status == Status.QUEUED }
 
@@ -111,14 +113,18 @@ fun App(ui: UiState, browser: Browser) {
     }
 
     if (ui.addOffer != null || ui.addText != null) {
-        AddDownloadSheet(
-            given = ui.addOffer,
-            text = ui.addText,
-            onDone = { msg ->
-                ui.addOffer = null; ui.addText = null
-                if (msg != null) ui.message = msg
-            },
-        )
+        key(ui.handoffSequence) {
+            AddDownloadSheet(
+                given = ui.addOffer,
+                text = ui.addText,
+                compactHandoff = ui.compactHandoff,
+                onHandoffQueued = { hostActivity?.moveTaskToBack(true) },
+                onDone = { msg ->
+                    ui.addOffer = null; ui.addText = null; ui.compactHandoff = false
+                    if (msg != null) ui.message = msg
+                },
+            )
+        }
     }
 
     ui.longPress?.let { (offer, image) ->
