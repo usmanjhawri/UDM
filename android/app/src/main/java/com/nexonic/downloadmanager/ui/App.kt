@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -35,8 +34,6 @@ import androidx.compose.ui.platform.LocalContext
 import com.nexonic.downloadmanager.Tab
 import com.nexonic.downloadmanager.core.tr
 import com.nexonic.downloadmanager.UiState
-import com.nexonic.downloadmanager.browser.Browser
-import com.nexonic.downloadmanager.browser.Offer
 import com.nexonic.downloadmanager.core.DownloadRequest
 import com.nexonic.downloadmanager.core.Http
 import com.nexonic.downloadmanager.core.Playlists
@@ -46,7 +43,7 @@ import com.nexonic.downloadmanager.data.Secrets
 import com.nexonic.downloadmanager.data.Status
 
 @Composable
-fun App(ui: UiState, browser: Browser) {
+fun App(ui: UiState) {
     val items by Downloads.items.collectAsState()
     val hostActivity = LocalContext.current as? android.app.Activity
     val snackbar = remember { SnackbarHostState() }
@@ -55,9 +52,7 @@ fun App(ui: UiState, browser: Browser) {
     LaunchedEffect(ui.message) {
         ui.message?.let { snackbar.showSnackbar(tr(it)); ui.message = null }
     }
-    BackHandler(enabled = ui.tab != Tab.DOWNLOADS) {
-        if (ui.tab == Tab.BROWSER && browser.view.canGoBack()) browser.back() else ui.tab = Tab.DOWNLOADS
-    }
+    BackHandler(enabled = ui.tab != Tab.DOWNLOADS) { ui.tab = Tab.DOWNLOADS }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -71,10 +66,6 @@ fun App(ui: UiState, browser: Browser) {
                     label = { Text(tr("Downloads")) },
                 )
                 NavigationBarItem(
-                    selected = ui.tab == Tab.BROWSER, onClick = { ui.tab = Tab.BROWSER; browser.startIfNeeded() },
-                    icon = { Icon(Icons.Outlined.Language, null) }, label = { Text(tr("Browser")) },
-                )
-                NavigationBarItem(
                     selected = ui.tab == Tab.SETTINGS, onClick = { ui.tab = Tab.SETTINGS },
                     icon = { Icon(Icons.Outlined.Settings, null) }, label = { Text(tr("Settings")) },
                 )
@@ -83,9 +74,8 @@ fun App(ui: UiState, browser: Browser) {
     ) { padding ->
         Box(Modifier.padding(padding)) {
             when (ui.tab) {
-                Tab.DOWNLOADS -> DownloadsScreen(items, ui, onOpenBrowser = { ui.tab = Tab.BROWSER; browser.startIfNeeded() })
-                Tab.BROWSER -> BrowserScreen(browser, ui)
-                Tab.SETTINGS -> SettingsScreen(browser) { ui.message = it }
+                Tab.DOWNLOADS -> DownloadsScreen(items, ui)
+                Tab.SETTINGS -> SettingsScreen { ui.message = it }
             }
         }
     }
@@ -101,13 +91,6 @@ fun App(ui: UiState, browser: Browser) {
         ProfileBatchSheet(link, onDismiss = { ui.addPlaylist = null }) { ui.message = it }
     }
     if (ui.showLibrary) MediaLibrarySheet(items, onDismiss = { ui.showLibrary = false }) { ui.message = it }
-    if (ui.showFeeds) FeedsSheet(onDismiss = { ui.showFeeds = false })
-    // A torrent found in an RSS feed opens in the Add Torrent window.
-    val feedTorrent by Downloads.feedTorrent.collectAsState()
-    LaunchedEffect(feedTorrent) {
-        val t = feedTorrent ?: return@LaunchedEffect
-        if (ui.addTorrent == null) { ui.addTorrent = t; Downloads.feedTorrent.value = null }
-    }
     ui.addTorrent?.let { source ->
         TorrentSheet(source) { msg -> ui.addTorrent = null; if (msg != null) ui.message = msg }
     }
@@ -127,25 +110,6 @@ fun App(ui: UiState, browser: Browser) {
         }
     }
 
-    ui.longPress?.let { (offer, image) ->
-        val context = LocalContext.current
-        AlertDialog(
-            onDismissRequest = { ui.longPress = null },
-            title = { Text(tr(if (image) "Image" else "Link"), maxLines = 1) },
-            text = { Text(offer.url, maxLines = 4) },
-            confirmButton = {
-                TextButton(onClick = { ui.longPress = null; ui.addOffer = offer }) { Text(tr(if (image) "Download image" else "Download link")) }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    ui.longPress = null
-                    copy(context, offer.url)
-                    ui.message = "Link copied"
-                }) { Text(tr("Copy link")) }
-            },
-        )
-    }
-
     ui.detailId?.let { id ->
         items.firstOrNull { it.id == id }?.let { item -> DetailSheet(item, onDismiss = { ui.detailId = null }) { ui.message = it } }
             ?: run { ui.detailId = null }
@@ -156,19 +120,3 @@ fun copy(context: Context, text: String) {
     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(tr("link"), text))
 }
 
-/** Adds a browser download without asking (when "Ask before downloading" is off). */
-fun quickAdd(offer: Offer, message: (String) -> Unit) {
-    Thread {
-        val req = DownloadRequest(offer.url, offer.cookies, offer.referer, offer.userAgent)
-        val probe = runCatching { Http.probe(req) }.getOrNull()
-        Downloads.add(
-            NewDownload(
-                url = offer.url, fileName = probe?.fileName ?: offer.fileName ?: "download", size = probe?.size ?: offer.size.takeIf { it >= 0 },
-                resumable = probe?.resumable ?: false, referer = offer.referer, userAgent = offer.userAgent,
-                secrets = Secrets(cookies = offer.cookies), mime = probe?.contentType ?: offer.mime, quality = offer.quality,
-            ),
-            startNow = true,
-        )
-    }.start()
-    message("Download started")
-}

@@ -30,7 +30,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.outlined.Add
@@ -41,13 +40,11 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.DropdownMenu
@@ -119,7 +116,7 @@ fun categoryIcon(c: FileCategory): ImageVector = when (c) {
 }
 
 @Composable
-fun DownloadsScreen(items: List<DownloadItem>, ui: UiState, onOpenBrowser: () -> Unit) {
+fun DownloadsScreen(items: List<DownloadItem>, ui: UiState) {
     var view by rememberSaveable { mutableStateOf(View.ALL) }
     var category by rememberSaveable { mutableStateOf<FileCategory?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -127,16 +124,6 @@ fun DownloadsScreen(items: List<DownloadItem>, ui: UiState, onOpenBrowser: () ->
     var query by rememberSaveable { mutableStateOf("") }
     val waitingForWifi by Downloads.waitingForWifi.collectAsState()
     val waitingForVpn by Downloads.waitingForVpn.collectAsState()
-    // Scan QR code: a nexonic:// code from the desktop apps, a web link or a magnet link opens the Add window.
-    val scanQr = androidx.activity.compose.rememberLauncherForActivityResult(com.journeyapps.barcodescanner.ScanContract()) { result ->
-        val text = result.contents?.trim() ?: return@rememberLauncherForActivityResult
-        val links = Links.fromNexonicLink(text).ifEmpty { Links.split(text) }
-        when {
-            text.startsWith("magnet:?", ignoreCase = true) -> ui.addTorrent = text
-            links.isNotEmpty() -> ui.addText = links.joinToString("\n")
-            else -> ui.message = "This QR code has no download link."
-        }
-    }
     // Long-press a download to select it; then tap others to add them. Actions apply to every selected download.
     var selected by remember { mutableStateOf(setOf<Long>()) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -189,25 +176,12 @@ fun DownloadsScreen(items: List<DownloadItem>, ui: UiState, onOpenBrowser: () ->
                                 Icon(Icons.Outlined.MoreVert, tr("More actions"))
                             }
                             DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
-                                DropdownMenuItem(
-                                    text = { Text(tr("Scan QR code")) },
-                                    leadingIcon = { Icon(Icons.Outlined.QrCodeScanner, null) },
-                                    onClick = {
-                                        moreOpen = false
-                                        scanQr.launch(com.journeyapps.barcodescanner.ScanOptions()
-                                            .setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
-                                            .setPrompt(tr("Scan a QR code with a download link"))
-                                            .setBeepEnabled(false).setOrientationLocked(false))
-                                    })
                                 DropdownMenuItem(text = { Text(tr("Profile Batch")) },
                                     leadingIcon = { Icon(Icons.Outlined.Subscriptions, null) },
                                     onClick = { moreOpen = false; ui.addPlaylist = "" })
                                 DropdownMenuItem(text = { Text(tr("Media library")) },
                                     leadingIcon = { Icon(Icons.Outlined.VideoLibrary, null) },
                                     onClick = { moreOpen = false; ui.showLibrary = true })
-                                DropdownMenuItem(text = { Text(tr("RSS Feeds")) },
-                                    leadingIcon = { Icon(Icons.Outlined.RssFeed, null) },
-                                    onClick = { moreOpen = false; ui.showFeeds = true })
                             }
                         }
                     },
@@ -238,7 +212,7 @@ fun DownloadsScreen(items: List<DownloadItem>, ui: UiState, onOpenBrowser: () ->
                 Text("Waiting for Wi-Fi. Turn off \"Wi-Fi only\" in Settings to use mobile data.", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
             }
             if (shown.isEmpty()) {
-                Empty(items.isEmpty(), onAdd = { ui.addText = "" }, onOpenBrowser = onOpenBrowser)
+                Empty(items.isEmpty(), onAdd = { ui.addText = "" })
             } else {
                 androidx.compose.runtime.key(Appearance.units) {
                     LazyColumn(
@@ -290,7 +264,7 @@ fun DownloadsScreen(items: List<DownloadItem>, ui: UiState, onOpenBrowser: () ->
 private fun Set<Long>.toggle(id: Long): Set<Long> = if (id in this) this - id else this + id
 
 @Composable
-private fun Empty(nothing: Boolean, onAdd: () -> Unit, onOpenBrowser: () -> Unit) {
+private fun Empty(nothing: Boolean, onAdd: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
             Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
@@ -303,7 +277,7 @@ private fun Empty(nothing: Boolean, onAdd: () -> Unit, onOpenBrowser: () -> Unit
             style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text(
-            if (nothing) tr("Paste a link, share one from Chrome with \"Download with Nexonic\", or browse with the built-in browser.")
+            if (nothing) tr("Paste a link, or share a video from Morphe or another app.")
             else tr("No downloads match."),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -311,8 +285,6 @@ private fun Empty(nothing: Boolean, onAdd: () -> Unit, onOpenBrowser: () -> Unit
         if (nothing) {
             Spacer(Modifier.height(20.dp))
             Button(onClick = onAdd) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text(tr("Add a link")) }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onOpenBrowser) { Icon(Icons.Outlined.Language, null); Spacer(Modifier.width(6.dp)); Text(tr("Open the browser")) }
         }
     }
 }

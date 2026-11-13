@@ -13,8 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.nexonic.downloadmanager.browser.Browser
-import com.nexonic.downloadmanager.browser.Offer
+import com.nexonic.downloadmanager.core.Offer
 import com.nexonic.downloadmanager.core.Links
 import com.nexonic.downloadmanager.core.MorpheHandoff
 import com.nexonic.downloadmanager.data.Downloads
@@ -47,12 +46,12 @@ class NexonicApp : Application() {
     }
 }
 
-enum class Tab { DOWNLOADS, BROWSER, SETTINGS }
+enum class Tab { DOWNLOADS, SETTINGS }
 
 /** Shared UI state: which tab is open and which add window or menu is showing. */
 class UiState {
     var tab by mutableStateOf(Tab.DOWNLOADS)
-    /** The add window: a browser offer, or pasted/shared text. */
+    /** Incoming shared or pasted links and their optional download metadata. */
     var addOffer by mutableStateOf<Offer?>(null)
     var addText by mutableStateOf<String?>(null)
     var compactHandoff by mutableStateOf(false)
@@ -62,18 +61,12 @@ class UiState {
     /** A playlist or channel link to list in the Add Playlist window ("" opens it empty). */
     var addPlaylist by mutableStateOf<String?>(null)
     var showLibrary by mutableStateOf(false)
-    var showFeeds by mutableStateOf(false)
-    var longPress by mutableStateOf<Pair<Offer, Boolean>?>(null)
     var detailId by mutableStateOf<Long?>(null)
     var message by mutableStateOf<String?>(null)
-    var showFound by mutableStateOf(false)
 }
 
 class MainActivity : ComponentActivity() {
     private val ui = UiState()
-    lateinit var browser: Browser
-        private set
-
     private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,18 +74,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppLanguage.load(this)
         Downloads.init(this)
-        browser = Browser(this,
-            onOffer = { offer ->
-                if (Downloads.settings.askBeforeDownload) ui.addOffer = offer
-                else com.nexonic.downloadmanager.ui.quickAdd(offer) { ui.message = it }
-            },
-            onLongPress = { offer, image -> ui.longPress = offer to image },
-        )
         val demo = Demo.requested(intent)
         if (!demo && Build.VERSION.SDK_INT >= 33 && !canNotify(this)) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         handle(intent)
-        if (demo) Demo.run(intent, ui, browser)
-        setContent { NexonicTheme { App(ui, browser) } }
+        if (demo) Demo.run(intent, ui)
+        setContent { NexonicTheme { App(ui) } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -144,7 +130,7 @@ class MainActivity : ComponentActivity() {
                         ui.handoffSequence++
                         ui.addText = youtube
                     }
-                    u != null && Links.isWebLink(u) -> { ui.tab = Tab.BROWSER; browser.go(u) }
+                    u != null && Links.isWebLink(u) -> { ui.tab = Tab.DOWNLOADS; ui.addText = u }
                 }
             }
         }
