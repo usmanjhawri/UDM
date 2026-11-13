@@ -204,7 +204,7 @@ fun SettingsScreen(message: (String) -> Unit) {
                 Text("Engine status: $problem", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = {
-                    copy(context, "Nexonic Personal v0.6 | yt-dlp: " +
+                    copy(context, "Nexonic Personal v0.6.1 | yt-dlp: " +
                         (engineVersion ?: "unavailable") + " | " + problem)
                     message("Diagnostic copied")
                 }) { Text("Copy safe diagnostic") }
@@ -304,7 +304,7 @@ fun SettingsScreen(message: (String) -> Unit) {
             }
 
             SlimSection("About")
-            Text("Nexonic Personal v0.6 · Core " + BuildConfig.VERSION_NAME,
+            Text("Nexonic Personal v0.6.1 · Core " + BuildConfig.VERSION_NAME,
                 style = MaterialTheme.typography.bodyMedium)
             Text("Based on Nexonic Download Manager. Free and open source.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

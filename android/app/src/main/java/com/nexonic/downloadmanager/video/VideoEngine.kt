@@ -106,6 +106,7 @@ object VideoEngine {
         if (result == "DEFERRED_ACTIVE_DOWNLOADS") return@synchronized
         prefs.edit().putLong("updated", System.currentTimeMillis()).apply()
         updateError = null
+        if (result == "DONE") bootstrapWarning = null
     }
 
     /** Initialize before version lookup and serialize with the update operation. */
