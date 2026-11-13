@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -219,16 +220,35 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
         if (compactHandoff && startNow) onHandoffQueued()
     }
 
-    ModalBottomSheet(onDismissRequest = { onDone(null) }, sheetState = sheet) {
+    ModalBottomSheet(onDismissRequest = { onDone(null) }, sheetState = sheet,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.extraLarge) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
           Column(
             Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(if (compactHandoff) "Save from YouTube" else tr(if (isVideo) "Download video" else "Download file"),
-                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (compactHandoff && isVideo) Text("Choose a format · Downloads continue in the background",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (compactHandoff) {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(46.dp).clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.Download, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(24.dp))
+                    }
+                    Column {
+                        Text("Save from YouTube", style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold)
+                        Text("Choose a format. Download continues in the background.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                Text(tr(if (isVideo) "Download video" else "Download file"),
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            }
 
             if (given == null && !(compactHandoff && single != null)) {
                 OutlinedTextField(
@@ -279,8 +299,16 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
             when {
                 single != null && isVideo -> {
                     if (compactHandoff && !advanced) {
-                        Text(page?.title?.takeIf { it.isNotBlank() } ?: "YouTube video",
-                            style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(page?.title?.takeIf { it.isNotBlank() } ?: "YouTube video",
+                                modifier = Modifier.padding(14.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
                     } else {
                         OutlinedTextField(
                             value = name, onValueChange = { name = it; nameEdited = true },
@@ -396,14 +424,15 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
             }
 
           } // End independently scrollable content
-          HorizontalDivider()
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+          HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+          Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
               modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
               verticalAlignment = Alignment.CenterVertically) {
               TextButton(onClick = { onDone(null) }, modifier = Modifier.heightIn(min = 52.dp)) { Text(tr("Cancel")) }
               if (compactHandoff) {
                   Button(onClick = { add(true) }, enabled = canAdd && !submitted,
-                      modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                      modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                      shape = MaterialTheme.shapes.medium) {
                       Text(if (reading) "Checking formats…" else "Download")
                   }
               } else {
@@ -420,8 +449,9 @@ fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = fal
 
 @Composable
 fun InfoRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth()) {
-        Box(Modifier.width(96.dp)) { Text(tr(label), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium) }
-        Text(tr(value), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(tr(label), color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.36f))
+        Text(tr(value), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.64f))
     }
 }
