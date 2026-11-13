@@ -3,8 +3,7 @@ package com.nexonic.downloadmanager
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import com.nexonic.downloadmanager.browser.Browser
-import com.nexonic.downloadmanager.browser.Offer
+import com.nexonic.downloadmanager.core.Offer
 import com.nexonic.downloadmanager.core.Segment
 import com.nexonic.downloadmanager.core.TransferState
 import com.nexonic.downloadmanager.data.DownloadItem
@@ -22,7 +21,7 @@ object Demo {
 
     fun requested(intent: Intent?): Boolean = BuildConfig.DEBUG && intent?.getStringExtra("ndm_demo") == "1"
 
-    fun run(intent: Intent, ui: UiState, browser: Browser) {
+    fun run(intent: Intent, ui: UiState) {
         val screen = intent.getStringExtra("ndm_screen") ?: "downloads"
         seed()
         val main = Handler(Looper.getMainLooper())
@@ -35,11 +34,6 @@ object Demo {
                     referer = "https://example.com/download",
                 )
             }, 1500)
-            "browser", "found" -> {
-                ui.tab = Tab.BROWSER
-                browser.go("$HOST:8098/page.html")
-                if (screen == "found") main.postDelayed({ ui.showFound = true }, 6000)
-            }
             "settings" -> ui.tab = Tab.SETTINGS
         }
     }

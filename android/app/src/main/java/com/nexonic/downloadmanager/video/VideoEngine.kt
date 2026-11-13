@@ -2,7 +2,6 @@ package com.nexonic.downloadmanager.video
 
 import android.content.Context
 import android.util.Log
-import android.webkit.CookieManager
 import com.nexonic.downloadmanager.core.Job
 import com.nexonic.downloadmanager.core.StreamFormat
 import com.nexonic.downloadmanager.core.VideoChoice
@@ -42,7 +41,6 @@ object VideoEngine {
                 YoutubeDL.getInstance().init(app)
                 // Versions up to 0.27 unpacked a large FFmpeg here; the app now runs its own from the library folder.
                 File(app.noBackupFilesDir, "youtubedl-android/packages/ffmpeg").takeIf { it.exists() }?.deleteRecursively()
-                forgetCookieFiles()
             } catch (e: Throwable) {
                 Log.e(TAG, "video engine start failed", e)
                 throw VideoException(VideoPages.engineError(e.javaClass.simpleName, e.message))
@@ -69,41 +67,10 @@ object VideoEngine {
         return status?.name ?: "DONE"
     }
 
-    /**
-     * Cookies of the built-in browser for this site, as a cookies file for yt-dlp. Sites like Instagram and Facebook
-     * often show videos only to signed-in people: signing in once in the Browser tab is then enough.
-     */
-    private fun cookiesFile(url: String): File? = runCatching {
-        val host = java.net.URI(url).host ?: return null
-        val header = CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() } ?: return null
-        val domain = "." + host.lowercase().removePrefix("www.").removePrefix("m.")
-        val lines = VideoPages.netscapeCookies(domain, header)
-        if (lines.isEmpty()) return null
-        // One file per request, readable only by the app and deleted when the request ends ([withCookies]): two
-        // downloads never share one, and no sign-in is left behind in the cache.
-        val dir = File(app.noBackupFilesDir, "video-cookies").apply { mkdirs() }
-        File.createTempFile("c", ".txt", dir).apply {
-            setReadable(false, false); setReadable(true, true)
-            writeText("# Netscape HTTP Cookie File\n" + lines.joinToString("\n") + "\n")
-        }
-    }.getOrNull()
-
-    /** Runs [block] with the browser's cookies for [url] in a file of its own (null: none), deleted afterwards. */
-    private inline fun <T> withCookies(url: String, block: (File?) -> T): T {
-        val file = cookiesFile(url)
-        try { return block(file) } finally { file?.delete() }
-    }
-
-    /** Cookie files an earlier run could not delete (the app was stopped mid-download), and the old shared one. */
-    private fun forgetCookieFiles() {
-        File(app.cacheDir, "video-cookies.txt").delete()
-        File(app.noBackupFilesDir, "video-cookies").listFiles()?.forEach { it.delete() }
-    }
-
-    private fun base(url: String, userAgent: String?, referer: String?, cookies: File?) = YoutubeDLRequest(url).apply {
+    /** Public media links are extracted directly by yt-dlp; the embedded browser was removed. */
+    private fun base(url: String, userAgent: String?, referer: String?) = YoutubeDLRequest(url).apply {
         addOption("--no-playlist")
         com.nexonic.downloadmanager.data.Vpn.sourceAddress()?.let { addOption("--source-address", it) }
-        cookies?.let { addOption("--cookies", it.absolutePath) }
         addOption("--no-mtime")
         addOption("--socket-timeout", "30")
         userAgent?.let { addOption("--user-agent", it) }
@@ -115,7 +82,7 @@ object VideoEngine {
         ensure()
         val target = resolve(url)
         val info = try {
-            withCookies(target) { YoutubeDL.getInstance().getInfo(base(target, userAgent, referer, it)) }
+            YoutubeDL.getInstance().getInfo(base(target, userAgent, referer))
         } catch (e: Exception) {
             Log.w(TAG, "read failed", e)
             throw VideoException(VideoPages.friendlyError(e.message))
@@ -145,8 +112,7 @@ object VideoEngine {
         ensure()
         dir.mkdirs()
         val target = resolve(url)
-        val cookies = cookiesFile(target)
-        val req = base(target, userAgent, referer, cookies).apply {
+        val req = base(target, userAgent, referer).apply {
             addOption("-f", choice.selector)
             // Sites whose videos all have the same title ("Video by name"): named after the caption, with the video's id
             // so two videos never share a name (the engine would skip the second as "already downloaded").
@@ -183,8 +149,6 @@ object VideoEngine {
         } catch (e: Throwable) {
             Log.e(TAG, "download failed", e)
             throw VideoException(VideoPages.engineError(e.javaClass.simpleName, e.message))
-        } finally {
-            cookies?.delete()
         }
         return dir.listFiles()?.filter { it.isFile && !it.name.endsWith(".part") && !it.name.endsWith(".ytdl") && it.length() > 0 }
             ?.maxByOrNull { it.length() }
@@ -205,8 +169,6 @@ object VideoEngine {
             addOption("--playlist-end", Playlists.MAX_ENTRIES.toString())
             addOption("--socket-timeout", "30")
         }
-        val cookies = cookiesFile(target)
-        cookies?.let { req.addOption("--cookies", it.absolutePath) }
         val pid = "playlist-" + System.nanoTime()
         val timer = Thread({
             try { Thread.sleep(120_000); cancel(pid) } catch (e: InterruptedException) { }
@@ -221,7 +183,6 @@ object VideoEngine {
             throw VideoException(VideoPages.engineError(e.javaClass.simpleName, e.message))
         } finally {
             timer.interrupt()
-            cookies?.delete()
         }
         val r = Playlists.parse(out) ?: throw VideoException("The list of videos could not be read.")
         if (r.entries.isEmpty()) throw VideoException("No videos were found at this link.")
@@ -281,7 +242,6 @@ object VideoEngine {
                 instanceFollowRedirects = false
                 connectTimeout = 15000; readTimeout = 15000
                 setRequestProperty("User-Agent", DESKTOP_UA)
-                CookieManager.getInstance().getCookie(current)?.let { setRequestProperty("Cookie", it) }
             }
             val next = runCatching { if (conn.responseCode in 300..399) conn.getHeaderField("Location") else null }.getOrNull()
             conn.disconnect()

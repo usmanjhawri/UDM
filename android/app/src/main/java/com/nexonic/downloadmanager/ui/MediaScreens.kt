@@ -165,26 +165,7 @@ fun ProfileBatchSheet(link: String, onDismiss: () -> Unit, message: (String) -> 
             }
             note.takeIf { it.isNotEmpty() }?.let { status += "\n" + it }
         }
-        val social = com.nexonic.downloadmanager.core.SocialPages.find(url)
-        // The visitor's page is read only in a view kept apart from the browser's sign-in; without that, the engine's
-        // cookie-free listing below is used.
-        if (social != null && com.nexonic.downloadmanager.video.SocialWebView.isolated()) {
-            // Instagram and Facebook show their posts only through their own pages: open them like a visitor's browser.
-            val (site, name, pages) = social
-            val web = com.nexonic.downloadmanager.video.SocialWebView
-            status = tr("Opening the profile like a visitor's browser…")
-            scope.launch {
-                val (posts, videos) = runCatching { web.scan(context, site, pages, f.max, { n -> status = tr("%d found so far…").format(n) }) { !busy } }
-                    .getOrDefault(0 to emptyList())
-                busy = false
-                when {
-                    videos.isNotEmpty() -> show(videos, name, "${site.name}: " + tr("visitors who are not signed in see only the latest posts; Nexonic took the videos among them."))
-                    posts > 0 -> status = com.nexonic.downloadmanager.core.InstagramPage.noVideos(posts)
-                    else -> status = "${site.name}: " + tr("no videos were shown to a visitor who is not signed in (the profile may be private or not exist).")
-                }
-            }
-            return
-        }
+        // Public profile/channel listing uses yt-dlp exclusively; no embedded WebView.
         scope.launch {
             val r = withContext(Dispatchers.IO) {
                 runCatching { Downloads.discover(url, f.max, false, stopId) { n -> if (n > 0) scope.launch { status = tr("%d found so far…").format(n) } } }

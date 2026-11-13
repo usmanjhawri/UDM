@@ -28,7 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.util.concurrent.Executors
 
-/** What the app needs to add a download (from the Add window, the browser or a shared link). */
+/** A download requested through the Add window or an external link handoff. */
 data class NewDownload(
     val url: String,
     val fileName: String,
@@ -84,9 +84,8 @@ object Downloads {
         main.postDelayed(object : Runnable { override fun run() { applySpeedLimit(); main.postDelayed(this, 30_000) } }, 30_000)
         cap = settings.dataCap
         Vpn.init(app, settings.vpnOnly)
-        feeds = com.nexonic.downloadmanager.core.Feeds.fromJson(settings.feeds)
-        // RSS feeds that are due are checked every minute while the app runs.
-        main.post(object : Runnable { override fun run() { checkFeeds(); checkProfiles(); main.postDelayed(this, 60_000) } })
+        // Keep profile batch scheduling, but do not poll RSS feeds in the background.
+        main.post(object : Runnable { override fun run() { checkProfiles(); main.postDelayed(this, 60_000) } })
         // Downloads that were running when the app stopped continue.
         _items.value = store.load().map { if (it.status == Status.DOWNLOADING) it.copy(status = Status.QUEUED, speed = 0) else it.copy(speed = 0) }
         if (_items.value.any { it.status == Status.QUEUED }) main.post { pump() }
@@ -556,57 +555,6 @@ object Downloads {
         transfers[id] = job
         update(id) { it.copy(status = Status.DOWNLOADING, error = null) }
         job.start()
-    }
-
-    // ---- RSS feeds (Downloads → RSS feeds) ----
-
-    var feeds: MutableList<com.nexonic.downloadmanager.core.FeedSubscription> = mutableListOf()
-        private set
-    /** A torrent from a feed, to show in the Add Torrent window (one at a time). */
-    val feedTorrent = MutableStateFlow<String?>(null)
-    @Volatile private var checkingFeeds = false
-
-    @Synchronized fun saveFeeds() { settings.feeds = com.nexonic.downloadmanager.core.Feeds.toJson(feeds) }
-
-    /** Checks the feeds that are due (or all), adding each new matching file; torrents open in the Add Torrent window. */
-    fun checkFeeds(all: Boolean = false, done: (() -> Unit)? = null) {
-        if (!::app.isInitialized || checkingFeeds) return
-        val due = synchronized(this) { feeds.filter { it.enabled && (all || com.nexonic.downloadmanager.core.Feeds.due(it)) } }
-        if (due.isEmpty()) { done?.let { d -> main.post { d() } }; return }
-        checkingFeeds = true
-        Thread {
-            try {
-                for (f in due) {
-                    try {
-                        val url = java.net.URL(f.url)
-                        if (!Links.isWebLink(f.url)) throw java.io.IOException("The feed address must start with http:// or https://")
-                        val c = (Net.opener?.invoke(url) ?: url.openConnection()) as java.net.HttpURLConnection
-                        val xml = try {
-                            c.connectTimeout = 30_000; c.readTimeout = 60_000; c.setRequestProperty("User-Agent", "NexonicDownloadManager")
-                            if (c.responseCode !in 200..299) throw java.io.IOException("HTTP ${c.responseCode}")
-                            c.inputStream.use { it.readBytes() }.also { if (it.size > 16 * 1024 * 1024) throw java.io.IOException("The feed is too large.") }
-                        } finally { c.disconnect() }
-                        val items = synchronized(this) { com.nexonic.downloadmanager.core.Feeds.check(f, xml) }
-                        for (i in items) {
-                            if (i.link.startsWith("magnet:?", true) || i.link.substringBefore('?').endsWith(".torrent", true)) {
-                                if (feedTorrent.value == null) feedTorrent.value = i.link
-                                continue
-                            }
-                            val req = DownloadRequest(i.link)
-                            val probe = runCatching { com.nexonic.downloadmanager.core.Http.probe(req) }.getOrNull()
-                            add(NewDownload(url = i.link, fileName = probe?.fileName ?: FileNames.fromUrl(i.link), size = probe?.size ?: i.size,
-                                resumable = probe?.resumable ?: false, mime = probe?.contentType), startNow = true)
-                        }
-                    } catch (e: Exception) {
-                        synchronized(this) { f.lastChecked = System.currentTimeMillis(); f.lastResult = "Check failed: ${e.message}" }
-                    }
-                }
-                saveFeeds()
-            } finally {
-                checkingFeeds = false
-                done?.let { d -> main.post { d() } }
-            }
-        }.start()
     }
 
     // ---- Debrid (Settings → Debrid service): your own key, kept encrypted with the other secrets ----
