@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,6 +47,9 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -117,6 +121,7 @@ fun DownloadsScreen(items: List<DownloadItem>, ui: UiState, onOpenBrowser: () ->
     var view by rememberSaveable { mutableStateOf(View.ALL) }
     var category by rememberSaveable { mutableStateOf<FileCategory?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
+    var moreOpen by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val waitingForWifi by Downloads.waitingForWifi.collectAsState()
     val waitingForVpn by Downloads.waitingForVpn.collectAsState()
@@ -175,24 +180,42 @@ fun DownloadsScreen(items: List<DownloadItem>, ui: UiState, onOpenBrowser: () ->
                     title = { Text(tr("Downloads"), fontWeight = FontWeight.SemiBold) },
                     actions = {
                         IconButton(onClick = { searching = true }) { Icon(Icons.Outlined.Search, tr("Search")) }
-                        IconButton(onClick = {
-                            scanQr.launch(com.journeyapps.barcodescanner.ScanOptions()
-                                .setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
-                                .setPrompt(tr("Point the camera at a QR code from Nexonic on your computer, or any download link."))
-                                .setBeepEnabled(false).setOrientationLocked(false))
-                        }) { Icon(Icons.Outlined.QrCodeScanner, tr("Scan QR code")) }
-                        IconButton(onClick = { ui.addPlaylist = "" }) { Icon(Icons.Outlined.Subscriptions, tr("Profile Batch")) }
-                        IconButton(onClick = { ui.showLibrary = true }) { Icon(Icons.Outlined.VideoLibrary, tr("Media library")) }
-                        IconButton(onClick = { ui.showFeeds = true }) { Icon(Icons.Outlined.RssFeed, tr("RSS Feeds")) }
                         if (running > 0) IconButton(onClick = { Downloads.pauseAll() }) { Icon(Icons.Outlined.Pause, tr("Pause all")) }
                         else if (later > 0) IconButton(onClick = { Downloads.startAll() }) { Icon(Icons.Outlined.PlayArrow, tr("Start all")) }
+                        Box {
+                            IconButton(onClick = { moreOpen = true }) {
+                                Icon(Icons.Outlined.MoreVert, tr("More actions"))
+                            }
+                            DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(tr("Scan QR code")) },
+                                    leadingIcon = { Icon(Icons.Outlined.QrCodeScanner, null) },
+                                    onClick = {
+                                        moreOpen = false
+                                        scanQr.launch(com.journeyapps.barcodescanner.ScanOptions()
+                                            .setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
+                                            .setPrompt(tr("Scan a QR code with a download link"))
+                                            .setBeepEnabled(false).setOrientationLocked(false))
+                                    })
+                                DropdownMenuItem(text = { Text(tr("Profile Batch")) },
+                                    leadingIcon = { Icon(Icons.Outlined.Subscriptions, null) },
+                                    onClick = { moreOpen = false; ui.addPlaylist = "" })
+                                DropdownMenuItem(text = { Text(tr("Media library")) },
+                                    leadingIcon = { Icon(Icons.Outlined.VideoLibrary, null) },
+                                    onClick = { moreOpen = false; ui.showLibrary = true })
+                                DropdownMenuItem(text = { Text(tr("RSS Feeds")) },
+                                    leadingIcon = { Icon(Icons.Outlined.RssFeed, null) },
+                                    onClick = { moreOpen = false; ui.showFeeds = true })
+                            }
+                        }
                     },
                 )
             }
             SecondaryTabRow(selectedTabIndex = view.ordinal) {
                 View.entries.forEach { v ->
                     val count = items.count { when (v) { View.ALL -> true; View.UNFINISHED -> it.status != Status.COMPLETE; View.FINISHED -> it.status == Status.COMPLETE } }
-                    Tab(selected = view == v, onClick = { view = v }, text = { Text("${tr(v.label)} ($count)") })
+                    val short = when (v) { View.ALL -> tr("All"); View.UNFINISHED -> tr("Active"); View.FINISHED -> tr("Done") }
+                    Tab(selected = view == v, onClick = { view = v }, text = { Text("$short $count", maxLines = 1) })
                 }
             }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -295,6 +318,7 @@ fun DownloadRow(item: DownloadItem, selected: Boolean = false, selecting: Boolea
         Modifier.fillMaxWidth()
             .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .heightIn(min = 72.dp)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -312,7 +336,8 @@ fun DownloadRow(item: DownloadItem, selected: Boolean = false, selecting: Boolea
                 Spacer(Modifier.height(4.dp))
             }
             Text(
-                statusText(item), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                statusText(item), style = MaterialTheme.typography.bodySmall,
+                maxLines = if (item.status == Status.FAILED) 2 else 1, overflow = TextOverflow.Ellipsis,
                 color = if (item.status == Status.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
