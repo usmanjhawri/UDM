@@ -24,6 +24,8 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +67,8 @@ import com.nexonic.downloadmanager.data.Downloads
 import com.nexonic.downloadmanager.data.NewDownload
 import com.nexonic.downloadmanager.data.Secrets
 import com.nexonic.downloadmanager.core.VideoChoice
+import com.nexonic.downloadmanager.core.HandoffPreference
+import com.nexonic.downloadmanager.core.HandoffQualityPolicy
 import com.nexonic.downloadmanager.core.VideoPages
 import com.nexonic.downloadmanager.video.VideoEngine
 import com.nexonic.downloadmanager.video.VideoPage
@@ -79,7 +83,8 @@ import kotlinx.coroutines.withContext
  * with Start Download, Download Later or Cancel. Also takes pasted or shared links, several at once, and batch patterns.
  */
 @Composable
-fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
+fun AddDownloadSheet(given: Offer?, text: String?, compactHandoff: Boolean = false,
+    onHandoffQueued: () -> Unit = {}, onDone: (String?) -> Unit) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     var input by remember { mutableStateOf(given?.url ?: text.orEmpty()) }
@@ -98,6 +103,8 @@ fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
     var reading by remember { mutableStateOf(false) }
     var page by remember { mutableStateOf<VideoPage?>(null) }
     var pick by remember { mutableStateOf(0) }
+    var audioTab by remember { mutableStateOf(false) }
+    var submitted by remember { mutableStateOf(false) }
 
     // A browser's "Copy as cURL" pasted here: one download with the command's referrer, cookies, browser name and login.
     val curl = remember(input) { if (given == null && CurlCommand.looks(input)) CurlCommand.parse(input) else null }
@@ -124,9 +131,9 @@ fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
 
     // Ask the server for the name and size of a single link.
     LaunchedEffect(single, user, password) {
-        probe = null; problem = null; page = null; isVideo = false; pick = 0
+        probe = null; problem = null; page = null; isVideo = false; pick = 0; audioTab = false
         if (single == null) return@LaunchedEffect
-        delay(350)
+        if (!compactHandoff) delay(350)
         if (VideoPages.isVideoSite(single)) {
             isVideo = true
         } else {
@@ -153,7 +160,12 @@ fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
             reading = false
             read.onSuccess { p ->
                 page = p
-                if (!nameEdited) name = VideoPages.fileName(p.title, p.choices.first().ext)
+                if (compactHandoff) {
+                    val suggested = HandoffPreference.pick(context, p.choices)
+                    if (suggested in p.choices.indices) pick = suggested
+                }
+                audioTab = p.choices.getOrNull(pick)?.audioOnly == true
+                if (!nameEdited) p.choices.getOrNull(pick)?.let { name = VideoPages.fileName(p.title, it.ext) }
             }.onFailure { problem = (it as? com.nexonic.downloadmanager.video.VideoException)?.message ?: VideoPages.engineError(it.javaClass.simpleName, it.message) }
         }
     }
@@ -167,10 +179,13 @@ fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
 
     // A video can be added right away: while the page is still being read it downloads in the best quality and is named
     // after the video; problems then show on the download itself. Only a page that has no video can't be added.
-    val canAdd = links.isNotEmpty() && !(single != null && isVideo && page == null && !reading)
+    val canAdd = links.isNotEmpty() &&
+        !(single != null && isVideo && page == null && !reading) &&
+        (!compactHandoff || !page?.choices.isNullOrEmpty())
 
     fun add(startNow: Boolean) {
-        if (links.isEmpty()) return
+        if (links.isEmpty() || submitted) return
+        submitted = true
         val secrets = Secrets(cookies = offer?.cookies, user = user.ifEmpty { null }, password = password.ifEmpty { null })
         val choice: VideoChoice? = page?.choices?.getOrNull(pick)
         links.forEach { u ->
@@ -192,18 +207,24 @@ fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
                 startNow,
             )
         }
+        if (compactHandoff && choice != null) HandoffPreference.remember(context, choice)
         val what = if (links.size == 1) "Download" else "${links.size} downloads"
         onDone(if (startNow) "$what started" else "$what saved for later")
+        if (compactHandoff && startNow) onHandoffQueued()
     }
 
     ModalBottomSheet(onDismissRequest = { onDone(null) }, sheetState = sheet) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).navigationBarsPadding(),
+        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
+          Column(
+            Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(tr(if (isVideo) "Download video" else "Download file"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(if (compactHandoff) "Save from YouTube" else tr(if (isVideo) "Download video" else "Download file"),
+                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (compactHandoff && isVideo) Text("Choose a format · Downloads continue in the background",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            if (given == null) {
+            if (given == null && !(compactHandoff && single != null)) {
                 OutlinedTextField(
                     value = input, onValueChange = { input = it },
                     label = { Text(tr("Links (one or more)")) },
@@ -231,7 +252,8 @@ fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
                     supportingText = { Text(tr("* and ? are wildcards; ! leaves links out. Example: *.jpg !*thumb*") + " · ${links.size}") },
                 )
             } else {
-                Text(given.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text((given?.url ?: single).orEmpty(), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (repeat.isNotEmpty()) {
                 val r = repeat.first()
@@ -255,15 +277,35 @@ fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
                         label = { Text(tr("File name")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     )
                     page?.let { p ->
-                        Text(tr("Quality"), fontWeight = FontWeight.SemiBold)
+                        Text("Format", fontWeight = FontWeight.SemiBold)
+                        val hasVideo = p.choices.any { !it.audioOnly }
+                        val hasAudio = p.choices.any { it.audioOnly }
+                        if (hasVideo && hasAudio) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = !audioTab, onClick = {
+                                    audioTab = false
+                                    p.choices.indexOfFirst { !it.audioOnly }.takeIf { it >= 0 }?.let { choose(it) }
+                                }, label = { Text("Video") })
+                                FilterChip(selected = audioTab, onClick = {
+                                    audioTab = true
+                                    p.choices.indexOfFirst { it.audioOnly }.takeIf { it >= 0 }?.let { choose(it) }
+                                }, label = { Text("Audio") })
+                            }
+                        }
                         p.choices.forEachIndexed { i, c ->
+                            if (c.audioOnly != audioTab) return@forEachIndexed
                             Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { choose(i) }.padding(vertical = 2.dp),
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                    .background(if (pick == i) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                    .clickable { choose(i) }.padding(vertical = 6.dp, horizontal = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 RadioButton(selected = pick == i, onClick = { choose(i) })
-                                Text(tr(c.label), modifier = Modifier.weight(1f))
-                                c.size?.let { Text(Format.size(it), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+                                val resolution = HandoffQualityPolicy.heightFromLabel(c.label)?.let { "${it}p" }
+                                val label = if (c.audioOnly) c.ext.uppercase() else "${resolution ?: "Auto"} · ${c.ext.uppercase()}"
+                                Text(label, modifier = Modifier.weight(1f))
+                                c.size?.let { Text("≈ " + Format.size(it), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
                             }
                         }
                         val audio = p.choices.getOrNull(pick)?.audioOnly == true
@@ -317,13 +359,22 @@ fun AddDownloadSheet(given: Offer?, text: String?, onDone: (String?) -> Unit) {
                 Text(tr("Sent only to this site, and kept encrypted on this phone."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = { onDone(null) }) { Text(tr("Cancel")) }
-                Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = { add(false) }, enabled = canAdd) { Text(tr("Later")) }
-                Button(onClick = { add(true) }, enabled = canAdd) { Text(tr("Start download")) }
-            }
-            Spacer(Modifier.height(12.dp))
+          } // End independently scrollable content
+          HorizontalDivider()
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+              modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+              verticalAlignment = Alignment.CenterVertically) {
+              TextButton(onClick = { onDone(null) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(tr("Cancel")) }
+              Spacer(Modifier.weight(1f))
+              if (!compactHandoff) {
+                  OutlinedButton(onClick = { add(false) }, enabled = canAdd && !submitted,
+                      modifier = Modifier.heightIn(min = 48.dp)) { Text(tr("Later")) }
+              }
+              Button(onClick = { add(true) }, enabled = canAdd && !submitted,
+                  modifier = Modifier.heightIn(min = 48.dp)) {
+                  Text(if (compactHandoff) "Download" else tr("Start download"))
+              }
+          }
         }
     }
 }

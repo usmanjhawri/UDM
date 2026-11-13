@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import com.nexonic.downloadmanager.browser.Browser
 import com.nexonic.downloadmanager.browser.Offer
 import com.nexonic.downloadmanager.core.Links
+import com.nexonic.downloadmanager.core.MorpheHandoff
 import com.nexonic.downloadmanager.data.Downloads
 import com.nexonic.downloadmanager.core.AppLanguage
 import com.nexonic.downloadmanager.service.Notifier
@@ -54,6 +55,8 @@ class UiState {
     /** The add window: a browser offer, or pasted/shared text. */
     var addOffer by mutableStateOf<Offer?>(null)
     var addText by mutableStateOf<String?>(null)
+    var compactHandoff by mutableStateOf(false)
+    var handoffSequence by mutableStateOf(0)
     /** A magnet link or .torrent file to show in the Add Torrent window. */
     var addTorrent by mutableStateOf<String?>(null)
     /** A playlist or channel link to list in the Add Playlist window ("" opens it empty). */
@@ -114,7 +117,12 @@ class MainActivity : ComponentActivity() {
                 if (stream != null || magnet != null) { ui.tab = Tab.DOWNLOADS; ui.addTorrent = stream?.toString() ?: magnet; intent.action = null; return }
                 val links = Links.split(text)
                 if (links.isEmpty()) ui.message = "No web link was shared."
-                else { ui.tab = Tab.DOWNLOADS; ui.addText = links.joinToString("\n") }
+                else {
+                    ui.tab = Tab.DOWNLOADS
+                    ui.compactHandoff = links.size == 1 && MorpheHandoff.acceptedYouTubePage(links.first()) != null
+                    if (ui.compactHandoff) ui.handoffSequence++
+                    ui.addText = links.joinToString("\n")
+                }
             }
             Intent.ACTION_VIEW -> {
                 val u = intent.dataString
@@ -122,8 +130,22 @@ class MainActivity : ComponentActivity() {
                     ui.tab = Tab.DOWNLOADS; ui.addTorrent = u; intent.action = null; return
                 }
                 val shared = u?.let { Links.fromNexonicLink(it) }.orEmpty()
-                if (shared.isNotEmpty()) { ui.tab = Tab.DOWNLOADS; ui.addText = shared.joinToString("\n") }  // a QR code from the desktop app
-                else if (u != null && Links.isWebLink(u)) { ui.tab = Tab.BROWSER; browser.go(u) }
+                val youtube = MorpheHandoff.acceptedYouTubePage(u)
+                when {
+                    shared.isNotEmpty() -> {
+                        ui.tab = Tab.DOWNLOADS
+                        ui.compactHandoff = shared.size == 1 && MorpheHandoff.acceptedYouTubePage(shared.first()) != null
+                        if (ui.compactHandoff) ui.handoffSequence++
+                        ui.addText = shared.joinToString("\n")
+                    }
+                    youtube != null -> {
+                        ui.tab = Tab.DOWNLOADS
+                        ui.compactHandoff = true
+                        ui.handoffSequence++
+                        ui.addText = youtube
+                    }
+                    u != null && Links.isWebLink(u) -> { ui.tab = Tab.BROWSER; browser.go(u) }
+                }
             }
         }
         if (intent.getBooleanExtra("startLater", false)) Downloads.startLater()
