@@ -4,3 +4,7 @@ local.properties
 *.keystore
 *.jks
 .idea/
+
+# Generated at build time; verified by preparePinnedYtDlp.
+/app/src/main/assets/verified-yt-dlp-2026.10.26
+/app/src/main/assets/verified-yt-dlp-2026.10.26.download
