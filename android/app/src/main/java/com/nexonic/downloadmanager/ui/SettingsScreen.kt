@@ -342,3 +342,10 @@ private fun licenseTexts(context: android.content.Context): String {
         runCatching { context.assets.open("licenses/$name").bufferedReader().use { it.readText() } }.getOrDefault("")
     }
 }
+
+/** Shared low-emphasis description used by other configuration screens. */
+@Composable
+internal fun Hint(text: String) {
+    Text(tr(text), style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
