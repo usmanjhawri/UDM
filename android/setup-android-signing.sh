@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Creates the Android release signing key on this Mac and stores it as GitHub repository secrets,
+# Creates a persistent Android release key locally, then sets GitHub Actions secrets.
 # so the Android workflow signs the release APK. The key never goes into the repository.
 # KEEP the folder it creates: every future update of the app must be signed with this same key.
 set -euo pipefail
-REPO="Shahrukhalid/nexonic-download-manager"
-DIR="$HOME/Vision Quest AI/nexonic-android-signing"
+REPO="${NEXONIC_REPO:-usmanjhawri/UDM}"
+DIR="${NEXONIC_SIGNING_DIR:-$HOME/nexonic-personal-signing}"
 KS="$DIR/nexonic-release.p12"
 ALIAS="nexonic"
 
@@ -19,7 +19,7 @@ else
   PASS="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)"
   KEY="$(mktemp)"; CERT="$(mktemp)"
   openssl req -x509 -newkey rsa:4096 -sha256 -days 10950 -nodes -keyout "$KEY" -out "$CERT" \
-    -subj "/CN=Shahrukh Khalid/O=Nexonic/C=PK" 2>/dev/null
+    -subj "/CN=Nexonic Personal/O=Personal Android Release" 2>/dev/null
   # PKCS12 with widely supported algorithms so every JDK can read it.
   openssl pkcs12 -export -name "$ALIAS" -inkey "$KEY" -in "$CERT" -out "$KS" -passout "pass:$PASS" \
     -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 2>/dev/null \

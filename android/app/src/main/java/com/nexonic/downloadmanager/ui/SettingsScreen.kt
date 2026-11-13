@@ -147,8 +147,11 @@ fun SettingsScreen(message: (String) -> Unit) {
                 engineVersionChecked = true
                 engineProblem = problem
                 message(if (result.isSuccess) {
-                    if (result.getOrNull() == "ALREADY_UP_TO_DATE") "yt-dlp is up to date"
-                    else "yt-dlp update successful"
+                    when (result.getOrNull()) {
+                        "ALREADY_UP_TO_DATE" -> "yt-dlp is up to date"
+                        "DEFERRED_ACTIVE_DOWNLOADS" -> "Update postponed until downloads finish"
+                        else -> "yt-dlp update successful"
+                    }
                 } else "yt-dlp update failed. See the reason under Video engine.")
             }
         }.start()
@@ -201,7 +204,7 @@ fun SettingsScreen(message: (String) -> Unit) {
                 Text("Engine status: $problem", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = {
-                    copy(context, "Nexonic Personal v0.5.2 | yt-dlp: " +
+                    copy(context, "Nexonic Personal v0.6 | yt-dlp: " +
                         (engineVersion ?: "unavailable") + " | " + problem)
                     message("Diagnostic copied")
                 }) { Text("Copy safe diagnostic") }
@@ -210,14 +213,16 @@ fun SettingsScreen(message: (String) -> Unit) {
                 modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(if (updating) "Updating…" else "Check for updates")
             }
-            OutlinedButton(enabled = !updating,
-                onClick = { pickEngineFile.launch(arrayOf("*/*")) },
-                modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Import verified yt-dlp file")
+            if (advanced || engineProblem != null) {
+                OutlinedButton(enabled = !updating,
+                    onClick = { pickEngineFile.launch(arrayOf("*/*")) },
+                    modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Import verified yt-dlp file")
+                }
+                Text("Recovery option: select official 2026.10.26 file. SHA-256 must match.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("Select the official 2026.10.26 file from Downloads; its SHA-256 is checked before installation.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             SlimSection("Advanced")
             TextButton(onClick = { advanced = !advanced }, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -226,13 +231,6 @@ fun SettingsScreen(message: (String) -> Unit) {
                 Icon(if (advanced) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null)
             }
             if (advanced) {
-                TextButton(enabled = !updating, onClick = { runEngineUpdate(true) },
-                    modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("Try yt-dlp nightly (experimental)")
-                }
-                Text("Nightly can help when stable is outdated, but may introduce regressions.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Connections per download: " + s.connections,
                     style = MaterialTheme.typography.bodyMedium)
                 Slider(value = connections, onValueChange = { connections = it },
@@ -306,7 +304,7 @@ fun SettingsScreen(message: (String) -> Unit) {
             }
 
             SlimSection("About")
-            Text("Nexonic Personal v0.5.2 · Core " + BuildConfig.VERSION_NAME,
+            Text("Nexonic Personal v0.6 · Core " + BuildConfig.VERSION_NAME,
                 style = MaterialTheme.typography.bodyMedium)
             Text("Based on Nexonic Download Manager. Free and open source.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

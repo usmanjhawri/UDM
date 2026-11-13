@@ -66,6 +66,16 @@ jobs:
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
             echo "NDM_ANDROID_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           fi
+      - name: Bundle pinned, SHA-256 verified stable yt-dlp
+        run: |
+          set -euo pipefail
+          BIN=android/app/src/main/assets/verified-yt-dlp-2026.10.26
+          mkdir -p "$(dirname "$BIN")"
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
+            --user-agent "NexonicPersonal/0.6 CI pinned-bootstrap" \
+            "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp" -o "$BIN"
+          printf '%s  %s\n' "e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3" "$BIN" | sha256sum -c -
+          test "$(wc -c < "$BIN")" -eq 3073072
       - name: Tests
         run: gradle -p android --no-daemon testDebugUnitTest
       - name: Build the APKs
@@ -128,6 +138,9 @@ jobs:
         run: |
           set -e
           REL=$(ls out/NexonicDownloadManager-Android-release*.apk | head -1)
+          # Fresh installs must include the verified stable engine even when GitHub is unreachable on Android.
+          unzip -l "$REL" "assets/verified-yt-dlp-2026.10.26" >/dev/null \
+            || { echo "Missing pinned verified yt-dlp asset"; exit 1; }
           # The license screen must ship in every APK.
           for f in NOTICES.txt GPL-3.0.txt Apache-2.0.txt PSF-2.0-Python.txt MIT-Nexonic.txt FFmpeg-LGPL-2.1.txt; do
             unzip -l "$REL" "assets/licenses/$f" >/dev/null || { echo "missing assets/licenses/$f"; exit 1; }
