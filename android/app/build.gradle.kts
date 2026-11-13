@@ -1,3 +1,9 @@
+import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -21,8 +27,8 @@ android {
         val version = rootProject.file("../VERSION").readText().trim()
         val (major, minor, patch) = version.split(".").map { it.takeWhile(Char::isDigit).ifEmpty { "0" }.toInt() }
         // Dedicated Personal package: increment this code for all future in-place updates.
-        versionCode = 60000
-        versionName = "0.6.0"
+        versionCode = 60100
+        versionName = "0.6.1"
         // The video engine (Python, yt-dlp, ffmpeg) is native code. Debug builds: phones (ARM) plus x86_64 for emulators.
         // Release builds pick their processor types with the splits below (Gradle refuses both at once).
         if (!releaseBuild) ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
@@ -64,7 +70,7 @@ android {
         }
         debug {
             // Side-by-side QA package: never replace existing .debug installs or delete their data.
-            applicationIdSuffix = ".qa"
+            applicationIdSuffix = ".qa1"
             versionNameSuffix = "-qa"
         }
     }
@@ -110,3 +116,73 @@ dependencies {
     // The real org.json for unit tests (the Android one is only a stub there).
     testImplementation("org.json:json:20240303")
 }
+
+/**
+ * AndroidIDE / Android Studio normally build directly from source, while GitHub
+ * Actions historically injected this file before invoking Gradle. Prepare it
+ * here too, and verify it before packaging any APK.
+ *
+ * The APK still builds in debug mode without connectivity: in that case the
+ * verified offline importer remains available instead of crashing on startup.
+ * Release artifacts are never allowed to ship without the pinned engine.
+ */
+val pinnedYtDlp = layout.projectDirectory.file("src/main/assets/verified-yt-dlp-2026.10.26").asFile
+val pinnedYtDlpSha = "e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3"
+val preparePinnedYtDlp = tasks.register("preparePinnedYtDlp") {
+    group = "build setup"
+    description = "Fetch and SHA-256 verify yt-dlp for all Android build environments"
+    doLast {
+        fun verified(file: File): Boolean {
+            if (!file.isFile || file.length() != 3_073_072L) return false
+            val hash = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val bytes = ByteArray(32 * 1024)
+                while (true) {
+                    val n = input.read(bytes)
+                    if (n < 0) break
+                    hash.update(bytes, 0, n)
+                }
+            }
+            return hash.digest().joinToString("") { "%02x".format(it.toInt() and 255) } == pinnedYtDlpSha
+        }
+        if (pinnedYtDlp.exists()) {
+            if (!verified(pinnedYtDlp)) throw GradleException("Bundled yt-dlp exists but has the wrong SHA-256; refusing to package it")
+        } else {
+            val partial = File(pinnedYtDlp.parentFile, pinnedYtDlp.name + ".download")
+            try {
+                pinnedYtDlp.parentFile.mkdirs()
+                val connection = (URI(
+                    "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp"
+                ).toURL().openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    connectTimeout = 15_000
+                    readTimeout = 60_000
+                    setRequestProperty("User-Agent", "NexonicPersonalGradle/0.6.1")
+                }
+                try {
+                    if (connection.responseCode != 200) {
+                        throw IOException("GitHub returned HTTP " + connection.responseCode)
+                    }
+                    connection.inputStream.use { source ->
+                        partial.outputStream().use { out -> source.copyTo(out) }
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+                if (!verified(partial)) throw GradleException("Official yt-dlp download failed SHA-256 verification")
+                if (!partial.renameTo(pinnedYtDlp)) throw IOException("Could not activate verified build asset")
+            } catch (e: Exception) {
+                partial.delete()
+                if (releaseBuild) throw GradleException("Release requires verified bundled yt-dlp. Download it or build with network access.", e)
+                logger.warn("Pinned yt-dlp unavailable in local build; runtime manual verified import remains available: " + e.javaClass.simpleName)
+            }
+        }
+    }
+}
+// Explicit dependency ensures the asset is prepared before Gradle snapshots APK assets.
+tasks.configureEach {
+    if (name == "preBuild" || (name.startsWith("merge") && name.endsWith("Assets"))) {
+        dependsOn(preparePinnedYtDlp)
+    }
+}
+

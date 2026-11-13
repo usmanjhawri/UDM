@@ -38,9 +38,10 @@ object VideoEngine {
     private lateinit var app: Context
     @Volatile private var updateError: String? = null
     @Volatile private var initError: String? = null
+    @Volatile private var bootstrapWarning: String? = null
 
     /** Last human-readable status; no URLs, cookies, or raw credentials are included. */
-    fun lastProblem(): String? = updateError ?: initError
+    fun lastProblem(): String? = updateError ?: initError ?: bootstrapWarning
 
     /** Warm the runtime asynchronously; failure is reported in Settings instead of being swallowed. */
     fun init(context: Context) {
@@ -61,7 +62,21 @@ object VideoEngine {
                 YoutubeDL.getInstance().init(app)
                 // Fresh installs get a verified working engine even when the release
                 // API or asset CDN is blocked from Android's HTTP stack.
-                BundledYtDlpBootstrap.installIfNeeded(app)
+                try {
+                    BundledYtDlpBootstrap.installIfNeeded(app)
+                    bootstrapWarning = null
+                } catch (e: java.io.FileNotFoundException) {
+                    // A locally-built APK might not contain the CI-generated asset.
+                    // Keep yt-dlp-android initialized so users can import the verified
+                    // binary manually; one absent optional asset must not kill the engine.
+                    bootstrapWarning = "Bundled yt-dlp asset missing. Import the official verified file in Settings."
+                    Log.w(TAG, "Optional bundled yt-dlp asset is missing; manual import available", e)
+                } catch (e: Exception) {
+                    // A failed bootstrap must never block rollback or manual recovery.
+                    bootstrapWarning = "Bundled yt-dlp could not be installed: " +
+                        EngineUpdateDiagnostics.describe(e)
+                    Log.w(TAG, "Optional yt-dlp bootstrap failed; keeping library available", e)
+                }
                 // Old native FFmpeg packages are no longer used: the APK ships its own FFmpeg.
                 File(app.noBackupFilesDir, "youtubedl-android/packages/ffmpeg")
                     .takeIf { it.exists() }?.deleteRecursively()
@@ -91,13 +106,14 @@ object VideoEngine {
         if (result == "DEFERRED_ACTIVE_DOWNLOADS") return@synchronized
         prefs.edit().putLong("updated", System.currentTimeMillis()).apply()
         updateError = null
+        if (result == "DONE") bootstrapWarning = null
     }
 
     /** Initialize before version lookup and serialize with the update operation. */
     fun version(): String? = runCatching {
         synchronized(updateLock) {
             ensure()
-            YoutubeDL.getInstance().version(app) ?: "Bundled (no update recorded)"
+            YoutubeDL.getInstance().version(app)
         }
     }.onFailure {
         initError = EngineUpdateDiagnostics.describe(it)
@@ -120,6 +136,7 @@ object VideoEngine {
                     .putLong("updated", System.currentTimeMillis())
                     .putLong("lastAttempt", System.currentTimeMillis()).apply()
                 updateError = null
+                bootstrapWarning = null
             }
             result
         } catch (e: Throwable) {
@@ -193,6 +210,7 @@ object VideoEngine {
                 .apply()
             updateError = null
             initError = null
+            bootstrapWarning = null
             if (backupMade) backup.delete()
             return@synchronized release.TAG
         } catch (e: Exception) {
