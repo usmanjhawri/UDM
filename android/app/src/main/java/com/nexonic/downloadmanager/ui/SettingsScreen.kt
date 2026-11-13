@@ -81,6 +81,8 @@ fun SettingsScreen(message: (String) -> Unit) {
     var capMB by remember { mutableStateOf(s.dataCapMB.takeIf { it > 0 }?.toString().orEmpty()) }
     var customFolder by remember { mutableStateOf(s.saveTreeName) }
     var engineVersion by remember { mutableStateOf<String?>(null) }
+    var engineVersionChecked by remember { mutableStateOf(false) }
+    var engineProblem by remember { mutableStateOf<String?>(null) }
     var updating by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
     var languageDialog by remember { mutableStateOf(false) }
@@ -106,7 +108,30 @@ fun SettingsScreen(message: (String) -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        engineVersion = withContext(Dispatchers.IO) { VideoEngine.version() }
+        val status = withContext(Dispatchers.IO) { VideoEngine.version() to VideoEngine.lastProblem() }
+        engineVersion = status.first
+        engineProblem = status.second
+        engineVersionChecked = true
+    }
+
+    fun runEngineUpdate(nightly: Boolean) {
+        if (updating) return
+        updating = true
+        Thread {
+            val result = runCatching { VideoEngine.updateNow(nightly) }
+            val version = VideoEngine.version()
+            val problem = VideoEngine.lastProblem()
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                updating = false
+                engineVersion = version
+                engineVersionChecked = true
+                engineProblem = problem
+                message(if (result.isSuccess) {
+                    if (result.getOrNull() == "ALREADY_UP_TO_DATE") "yt-dlp is up to date"
+                    else "yt-dlp update successful"
+                } else "yt-dlp update failed. See the reason under Video engine.")
+            }
+        }.start()
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -148,22 +173,22 @@ fun SettingsScreen(message: (String) -> Unit) {
             }
 
             SlimSection("Video engine")
-            Text("yt-dlp " + (engineVersion ?: "Checking version…"),
+            Text("yt-dlp " + (engineVersion ?: if (engineVersionChecked) "Version unavailable" else "Checking version…"),
                 style = MaterialTheme.typography.bodyMedium)
-            Text("Updates independently of the APK. If a website starts rejecting downloads, check here first.",
+            Text("Updates independently of the APK. If YouTube rejects a stream, update yt-dlp and refresh the download link.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(enabled = !updating, onClick = {
-                updating = true
-                Thread {
-                    val result = runCatching { VideoEngine.updateNow() }
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        updating = false
-                        engineVersion = VideoEngine.version()
-                        message(if (result.isSuccess) "yt-dlp update checked" else "yt-dlp update failed")
-                    }
-                }.start()
-            }, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(if (updating) "Checking…" else "Check for updates")
+            engineProblem?.let { problem ->
+                Text("Engine status: $problem", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = {
+                    copy(context, "Nexonic Personal v0.5.1 | yt-dlp: " +
+                        (engineVersion ?: "unavailable") + " | " + problem)
+                    message("Diagnostic copied")
+                }) { Text("Copy safe diagnostic") }
+            }
+            OutlinedButton(enabled = !updating, onClick = { runEngineUpdate(false) },
+                modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (updating) "Updating…" else "Check for updates")
             }
 
             SlimSection("Advanced")
@@ -173,6 +198,13 @@ fun SettingsScreen(message: (String) -> Unit) {
                 Icon(if (advanced) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null)
             }
             if (advanced) {
+                TextButton(enabled = !updating, onClick = { runEngineUpdate(true) },
+                    modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Try yt-dlp nightly (experimental)")
+                }
+                Text("Nightly can help when stable is outdated, but may introduce regressions.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Connections per download: " + s.connections,
                     style = MaterialTheme.typography.bodyMedium)
                 Slider(value = connections, onValueChange = { connections = it },
@@ -246,7 +278,7 @@ fun SettingsScreen(message: (String) -> Unit) {
             }
 
             SlimSection("About")
-            Text("Nexonic Personal · " + BuildConfig.VERSION_NAME,
+            Text("Nexonic Personal v0.5.1 · Core " + BuildConfig.VERSION_NAME,
                 style = MaterialTheme.typography.bodyMedium)
             Text("Based on Nexonic Download Manager. Free and open source.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

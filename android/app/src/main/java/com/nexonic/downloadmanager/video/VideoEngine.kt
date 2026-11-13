@@ -7,6 +7,7 @@ import com.nexonic.downloadmanager.core.StreamFormat
 import com.nexonic.downloadmanager.core.VideoChoice
 import com.nexonic.downloadmanager.core.VideoPages
 import com.nexonic.downloadmanager.core.Playlists
+import com.nexonic.downloadmanager.core.EngineUpdateDiagnostics
 import com.nexonic.downloadmanager.core.VideoSubtitles
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -24,13 +25,25 @@ class VideoException(message: String) : Exception(message)
  */
 object VideoEngine {
     private val lock = Any()
+    // The library must never update its Python/yt-dlp files concurrently with another update.
+    private val updateLock = Any()
     @Volatile private var ready = false
     private lateinit var app: Context
+    @Volatile private var updateError: String? = null
+    @Volatile private var initError: String? = null
 
-    /** Unpacks the engine on first use (a few seconds, once) and keeps yt-dlp current, at most once a day. */
+    /** Last human-readable status; no URLs, cookies, or raw credentials are included. */
+    fun lastProblem(): String? = updateError ?: initError
+
+    /** Warm the runtime asynchronously; failure is reported in Settings instead of being swallowed. */
     fun init(context: Context) {
         app = context.applicationContext
-        Thread({ runCatching { ensure() }; runCatching { updateIfDue() } }, "nexonic-video-init").start()
+        Thread({
+            runCatching { ensure(); updateIfDue() }.onFailure {
+                updateError = EngineUpdateDiagnostics.describe(it)
+                Log.w(TAG, "yt-dlp startup/update check failed", it)
+            }
+        }, "nexonic-video-init").start()
     }
 
     private fun ensure() {
@@ -39,32 +52,66 @@ object VideoEngine {
             if (ready) return
             try {
                 YoutubeDL.getInstance().init(app)
-                // Versions up to 0.27 unpacked a large FFmpeg here; the app now runs its own from the library folder.
-                File(app.noBackupFilesDir, "youtubedl-android/packages/ffmpeg").takeIf { it.exists() }?.deleteRecursively()
+                // Old native FFmpeg packages are no longer used: the APK ships its own FFmpeg.
+                File(app.noBackupFilesDir, "youtubedl-android/packages/ffmpeg")
+                    .takeIf { it.exists() }?.deleteRecursively()
+                ready = true
+                initError = null
             } catch (e: Throwable) {
+                val message = VideoPages.engineError(e.javaClass.simpleName, e.message)
+                initError = EngineUpdateDiagnostics.describe(e)
                 Log.e(TAG, "video engine start failed", e)
-                throw VideoException(VideoPages.engineError(e.javaClass.simpleName, e.message))
+                throw VideoException(message)
             }
-            ready = true
         }
     }
 
-    private fun updateIfDue() {
+    /** Automated stable update: no competing updates, no repeat attempt on every app reopen. */
+    private fun updateIfDue() = synchronized(updateLock) {
+        ensure()
         val prefs = app.getSharedPreferences("video-engine", Context.MODE_PRIVATE)
-        val last = prefs.getLong("updated", 0)
-        if (System.currentTimeMillis() - last < 24L * 3600 * 1000) return
+        val now = System.currentTimeMillis()
+        val lastSuccess = prefs.getLong("updated", 0)
+        if (now - lastSuccess < 24L * 3600 * 1000) return@synchronized
+        // A failed background check may be retried later; manual checks ignore this cooldown.
+        val lastAttempt = prefs.getLong("lastAttempt", 0)
+        if (now - lastAttempt < 60L * 60 * 1000) return@synchronized
+        prefs.edit().putLong("lastAttempt", now).apply()
         YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)
         prefs.edit().putLong("updated", System.currentTimeMillis()).apply()
+        updateError = null
     }
 
-    fun version(): String? = runCatching { YoutubeDL.getInstance().versionName(app) ?: YoutubeDL.getInstance().version(app) }.getOrNull()
+    /** Initialize before version lookup and serialize with the update operation. */
+    fun version(): String? = runCatching {
+        synchronized(updateLock) {
+            ensure()
+            YoutubeDL.getInstance().versionName(app) ?: YoutubeDL.getInstance().version(app)
+        }
+    }.onFailure {
+        initError = EngineUpdateDiagnostics.describe(it)
+        Log.w(TAG, "yt-dlp version unavailable", it)
+    }.getOrNull()
 
-    /** Checks for a newer yt-dlp now (Settings). */
-    fun updateNow(): String {
-        ensure()
-        val status = YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)
-        app.getSharedPreferences("video-engine", Context.MODE_PRIVATE).edit().putLong("updated", System.currentTimeMillis()).apply()
-        return status?.name ?: "DONE"
+    /**
+     * A user-triggered check, stable by default. Nightly is an explicit opt-in when stable
+     * cannot fix a site. Never silently replace the installed runtime with a nightly build.
+     */
+    fun updateNow(nightly: Boolean = false): String = synchronized(updateLock) {
+        try {
+            ensure()
+            val channel = if (nightly) YoutubeDL.UpdateChannel.NIGHTLY else YoutubeDL.UpdateChannel.STABLE
+            val result = YoutubeDL.getInstance().updateYoutubeDL(app, channel)
+            app.getSharedPreferences("video-engine", Context.MODE_PRIVATE).edit()
+                .putLong("updated", System.currentTimeMillis())
+                .putLong("lastAttempt", System.currentTimeMillis()).apply()
+            updateError = null
+            result?.name ?: "DONE"
+        } catch (e: Throwable) {
+            updateError = EngineUpdateDiagnostics.describe(e)
+            Log.w(TAG, "yt-dlp update failed", e)
+            throw VideoException("Update failed: $updateError")
+        }
     }
 
     /** Public media links are extracted directly by yt-dlp; the embedded browser was removed. */
