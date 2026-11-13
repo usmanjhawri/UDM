@@ -2,6 +2,9 @@ package com.nexonic.downloadmanager.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -11,20 +14,37 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import com.nexonic.downloadmanager.core.FileCategory
 
-val Brand = Color(0xFF2563EB)
-val BrandDark = Color(0xFF60A5FA)
+/** A restrained cobalt accent, paired with neutral surfaces rather than saturated panels. */
+val Brand = Color(0xFF3B53D6)
+val BrandDark = Color(0xFFA9B8FF)
 val Success = Color(0xFF16A34A)
 val Warning = Color(0xFFD97706)
 
+/** Shared shape scale for screens, cards, controls, and bottom sheets. */
+private val NexonicShapes = Shapes(
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(28.dp),
+)
+
 private val Light = lightColorScheme(
-    primary = Brand, onPrimary = Color.White, primaryContainer = Color(0xFFE8EFFF), onPrimaryContainer = Color(0xFF0B2A6F),
-    secondary = Color(0xFF475569), background = Color(0xFFF6F8FC), surface = Color.White, surfaceVariant = Color(0xFFEEF2F8),
-    onSurfaceVariant = Color(0xFF526077), outline = Color(0xFFD5DCE8),
+    primary = Brand, onPrimary = Color.White,
+    primaryContainer = Color(0xFFE7ECFF), onPrimaryContainer = Color(0xFF1C316D),
+    secondary = Color(0xFF566079), onSecondary = Color.White,
+    background = Color(0xFFF7F8FC), onBackground = Color(0xFF19202E),
+    surface = Color.White, onSurface = Color(0xFF19202E),
+    surfaceVariant = Color(0xFFEFF1F7), onSurfaceVariant = Color(0xFF4E596B),
+    outline = Color(0xFFBFC6D3), outlineVariant = Color(0xFFE2E6EE),
 )
 private val Dark = darkColorScheme(
-    primary = BrandDark, onPrimary = Color(0xFF0B1220), primaryContainer = Color(0xFF16244A), onPrimaryContainer = Color(0xFFDBE6FF),
-    secondary = Color(0xFF9AA7BD), background = Color(0xFF0A1020), surface = Color(0xFF111A30), surfaceVariant = Color(0xFF16213B),
-    onSurfaceVariant = Color(0xFF9AA7BD), outline = Color(0xFF26334F),
+    primary = BrandDark, onPrimary = Color(0xFF101D43),
+    primaryContainer = Color(0xFF2A3C69), onPrimaryContainer = Color(0xFFE0E8FF),
+    secondary = Color(0xFFACB9D3), onSecondary = Color(0xFF172034),
+    background = Color(0xFF0D111A), onBackground = Color(0xFFE9EDF6),
+    surface = Color(0xFF171D29), onSurface = Color(0xFFE9EDF6),
+    surfaceVariant = Color(0xFF252D3B), onSurfaceVariant = Color(0xFFB2BCD0),
+    outline = Color(0xFF657084), outlineVariant = Color(0xFF3C4658),
 )
 
 @Composable
@@ -41,7 +61,8 @@ fun NexonicTheme(content: @Composable () -> Unit) {
             surface = Color(scheme.surface), primaryContainer = Color(scheme.accent).copy(alpha = 0.15f).compositeOver(Color.White),
             onPrimaryContainer = Color.Black)
     }
-    MaterialTheme(colorScheme = colors, typography = typography(Appearance.font, Appearance.textScale), content = content)
+    MaterialTheme(colorScheme = colors, shapes = NexonicShapes,
+        typography = typography(Appearance.font, Appearance.textScale), content = content)
 }
 
 /** The chosen font family and text size applied to every text style of the app. */

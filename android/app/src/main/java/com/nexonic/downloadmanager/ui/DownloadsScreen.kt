@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Close
@@ -56,7 +58,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -238,20 +240,29 @@ fun DownloadsScreen(items: List<DownloadItem>, ui: UiState, onOpenBrowser: () ->
             if (shown.isEmpty()) {
                 Empty(items.isEmpty(), onAdd = { ui.addText = "" }, onOpenBrowser = onOpenBrowser)
             } else {
-                androidx.compose.runtime.key(Appearance.units) { LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
-                    items(shown, key = { it.id }) { item ->
-                        DownloadRow(
-                            item, selected = item.id in selected, selecting = selecting,
-                            onClick = { if (selecting) selected = selected.toggle(item.id) else ui.detailId = item.id },
-                            onLongClick = { selected = selected.toggle(item.id) },
-                        )
+                androidx.compose.runtime.key(Appearance.units) {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 6.dp, bottom = 104.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        items(shown, key = { it.id }) { item ->
+                            DownloadRow(
+                                item, selected = item.id in selected, selecting = selecting,
+                                onClick = { if (selecting) selected = selected.toggle(item.id) else ui.detailId = item.id },
+                                onLongClick = { selected = selected.toggle(item.id) },
+                            )
+                        }
                     }
-                } }
+                }
             }
         }
-        if (!selecting) FloatingActionButton(onClick = { ui.addText = "" }, modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
-            Icon(Icons.Outlined.Add, tr("Add download"))
-        }
+        if (!selecting) ExtendedFloatingActionButton(
+            onClick = { ui.addText = "" },
+            text = { Text(tr("Add download")) },
+            icon = { Icon(Icons.Outlined.Add, null) },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+        )
     }
 
     if (confirmRemove) {
@@ -281,7 +292,15 @@ private fun Set<Long>.toggle(id: Long): Set<Long> = if (id in this) this - id el
 @Composable
 private fun Empty(nothing: Boolean, onAdd: () -> Unit, onOpenBrowser: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(tr(if (nothing) "No downloads yet" else "Nothing here"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+            Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Download, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(32.dp))
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Text(tr(if (nothing) "No downloads yet" else "Nothing here"),
+            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text(
             if (nothing) tr("Paste a link, share one from Chrome with \"Download with Nexonic\", or browse with the built-in browser.")
@@ -314,32 +333,54 @@ fun statusText(item: DownloadItem): String = when (item.status) {
 @Composable
 fun DownloadRow(item: DownloadItem, selected: Boolean = false, selecting: Boolean = false, onLongClick: () -> Unit = {}, onClick: () -> Unit) {
     val color = categoryColor(item.category)
-    Row(
-        Modifier.fillMaxWidth()
-            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .heightIn(min = 72.dp)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val statusColor = when (item.status) {
+        Status.FAILED -> MaterialTheme.colorScheme.error
+        Status.COMPLETE -> Success
+        Status.DOWNLOADING -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = MaterialTheme.shapes.large,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        tonalElevation = if (selected) 0.dp else 1.dp,
     ) {
-        Box(Modifier.size(42.dp).clip(RoundedCornerShape(11.dp)).background(if (selected) MaterialTheme.colorScheme.primary else color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-            if (selected) Icon(Icons.Outlined.Check, tr("Selected"), tint = MaterialTheme.colorScheme.onPrimary)
+        Row(
+            Modifier.fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .heightIn(min = 80.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+        Box(Modifier.size(44.dp).clip(MaterialTheme.shapes.medium)
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else color.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center) {
+            if (selected) Icon(Icons.Outlined.Check, tr("Selected"), tint = MaterialTheme.colorScheme.primary)
             else Icon(categoryIcon(item.category), null, tint = color)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(item.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+            Text(item.fileName, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
             if (item.status == Status.DOWNLOADING || item.status == Status.PAUSED) {
                 Spacer(Modifier.height(5.dp))
                 if (item.size != null) LinearProgressIndicator(progress = { item.progress }, modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)))
                 else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)))
                 Spacer(Modifier.height(4.dp))
             }
-            Text(
-                statusText(item), style = MaterialTheme.typography.bodySmall,
-                maxLines = if (item.status == Status.FAILED) 2 else 1, overflow = TextOverflow.Ellipsis,
-                color = if (item.status == Status.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            val detail = when (item.status) {
+                Status.DOWNLOADING -> tr("Downloading") + " · " + statusText(item)
+                Status.COMPLETE -> tr("Finished") + " · " + statusText(item)
+                Status.FAILED -> tr("Failed") + " · " + statusText(item)
+                else -> statusText(item)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(statusColor))
+                Spacer(Modifier.width(7.dp))
+                Text(detail, style = MaterialTheme.typography.bodySmall,
+                    maxLines = if (item.status == Status.FAILED) 2 else 1, overflow = TextOverflow.Ellipsis,
+                    color = if (item.status == Status.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Spacer(Modifier.width(4.dp))
         if (!selecting) when (item.status) {
@@ -347,6 +388,7 @@ fun DownloadRow(item: DownloadItem, selected: Boolean = false, selecting: Boolea
             Status.PAUSED, Status.LATER -> IconButton(onClick = { Downloads.resume(item.id) }) { Icon(Icons.Outlined.PlayArrow, tr("Resume")) }
             Status.FAILED -> IconButton(onClick = { Downloads.retry(item.id) }) { Icon(Icons.Outlined.Refresh, tr("Try again")) }
             Status.COMPLETE -> {}
+        }
         }
     }
 }
