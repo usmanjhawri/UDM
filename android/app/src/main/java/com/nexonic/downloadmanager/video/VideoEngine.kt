@@ -1,6 +1,7 @@
 package com.nexonic.downloadmanager.video
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import com.nexonic.downloadmanager.core.Job
 import com.nexonic.downloadmanager.core.StreamFormat
@@ -8,10 +9,16 @@ import com.nexonic.downloadmanager.core.VideoChoice
 import com.nexonic.downloadmanager.core.VideoPages
 import com.nexonic.downloadmanager.core.Playlists
 import com.nexonic.downloadmanager.core.EngineUpdateDiagnostics
+import com.nexonic.downloadmanager.core.OfficialYtDlpRelease
+import com.nexonic.downloadmanager.data.Downloads
+import com.nexonic.downloadmanager.data.Status
 import com.nexonic.downloadmanager.core.VideoSubtitles
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** What the video engine found on a page. */
@@ -111,6 +118,85 @@ object VideoEngine {
             updateError = EngineUpdateDiagnostics.describe(e)
             Log.w(TAG, "yt-dlp update failed", e)
             throw VideoException("Update failed: $updateError")
+        }
+    }
+
+    /**
+     * Offline recovery for the user-downloaded official yt-dlp 2026.10.26 binary.
+     * Only the byte-for-byte SHA-256-pinned release is accepted.
+     * A backup and same-directory rename protect the previous executable.
+     */
+    fun importVerifiedRelease(uri: Uri): String = synchronized(updateLock) {
+        ensure()
+        if (Downloads.items.value.any { it.status == Status.DOWNLOADING }) {
+            throw VideoException("Pause active downloads before installing a video engine.")
+        }
+        val release = OfficialYtDlpRelease
+        val dir = File(app.noBackupFilesDir, "youtubedl-android/yt-dlp")
+        if (!dir.isDirectory && !dir.mkdirs()) {
+            throw VideoException("Cannot open the private yt-dlp folder.")
+        }
+        val target = File(dir, "yt-dlp")
+        val staged = File(dir, "yt-dlp.stage")
+        val backup = File(dir, "yt-dlp.backup")
+        var backupMade = false
+        var installed = false
+        try {
+            if (backup.exists() && !target.exists() && !backup.renameTo(target)) {
+                throw IOException("Could not recover previous engine backup")
+            }
+            if (staged.exists() && !staged.delete()) throw IOException("Cannot clear old import staging file")
+            val sha = MessageDigest.getInstance("SHA-256")
+            var length = 0L
+            val input = app.contentResolver.openInputStream(uri) ?: throw IOException("Cannot read selected file")
+            input.use { source ->
+                FileOutputStream(staged).use { destination ->
+                    val buffer = ByteArray(32768)
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        length += count
+                        if (length > release.MAX_BYTES) throw IOException("Selected file is too large")
+                        sha.update(buffer, 0, count)
+                        destination.write(buffer, 0, count)
+                    }
+                    destination.fd.sync()
+                }
+            }
+            if (!release.valid(length, sha.digest())) {
+                throw IOException("File does not match official yt-dlp 2026.10.26 (SHA-256 mismatch)")
+            }
+            if (backup.exists() && !backup.delete()) throw IOException("Cannot clear old backup")
+            if (target.exists()) {
+                if (!target.renameTo(backup)) throw IOException("Cannot back up current engine")
+                backupMade = true
+            }
+            if (!staged.renameTo(target)) throw IOException("Cannot activate verified engine")
+            installed = true
+            val prefs = app.getSharedPreferences("youtubedl-android", Context.MODE_PRIVATE)
+            if (!prefs.edit()
+                    .putString("dlpVersion", release.TAG)
+                    .putString("dlpVersionName", "yt-dlp " + release.TAG)
+                    .commit()) throw IOException("Could not save engine version")
+            val now = System.currentTimeMillis()
+            app.getSharedPreferences("video-engine", Context.MODE_PRIVATE).edit()
+                .putLong("updated", now)
+                .putLong("lastAttempt", now)
+                .apply()
+            updateError = null
+            initError = null
+            if (backupMade) backup.delete()
+            return@synchronized release.TAG
+        } catch (e: Exception) {
+            if (installed) target.delete()
+            if (backupMade && backup.exists() && !backup.renameTo(target)) {
+                Log.e(TAG, "Unable to restore previous yt-dlp backup")
+            }
+            updateError = EngineUpdateDiagnostics.describe(e)
+            Log.w(TAG, "yt-dlp offline import failed", e)
+            throw VideoException("Offline import failed: $updateError")
+        } finally {
+            staged.delete()
         }
     }
 
