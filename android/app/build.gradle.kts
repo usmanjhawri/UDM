@@ -62,7 +62,8 @@ android {
             signingConfig = signingConfigs.findByName("release")
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // Side-by-side QA package: never replace existing .debug installs or delete their data.
+            applicationIdSuffix = ".diagnostic"
             versionNameSuffix = "-debug"
         }
     }
