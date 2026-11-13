@@ -62,13 +62,6 @@ class VideoTest {
         assertFalse(VideoPages.isLoginPage("https://www.facebook.com/reel/123"))
     }
 
-    @Test fun cookiesFileLines() {
-        val l = VideoPages.netscapeCookies(".instagram.com", "sessionid=abc; csrftoken=x=y; bad")
-        assertEquals(2, l.size)
-        assertEquals(".instagram.com\tTRUE\t/\tTRUE\t0\tsessionid\tabc", l[0])
-        assertEquals("x=y", l[1].split('\t').last())
-    }
-
     @Test fun engineErrorsAreReadable() {
         val m = VideoPages.engineError("NoClassDefFoundError", "s2.e")
         assertTrue(m.startsWith("The video engine could not start"))

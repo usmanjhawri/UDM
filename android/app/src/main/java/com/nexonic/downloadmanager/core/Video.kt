@@ -114,17 +114,6 @@ object VideoPages {
         return p.startsWith("/login") || p.startsWith("/accounts/login") || p.contains("checkpoint")
     }
 
-    /** Browser cookies ("a=1; b=2") as lines of a Netscape cookies file for [domain] (".instagram.com"). */
-    fun netscapeCookies(domain: String, header: String): List<String> =
-        header.split(';').mapNotNull { part ->
-            val i = part.indexOf('=')
-            if (i <= 0) return@mapNotNull null
-            val name = part.substring(0, i).trim()
-            val value = part.substring(i + 1).trim()
-            if (name.isEmpty() || name.any { it == '\t' || it == '\n' } || value.any { it == '\t' || it == '\n' }) null
-            else "$domain\tTRUE\t/\tTRUE\t0\t$name\t$value"
-        }
-
     /** The video engine itself failed (not the site): a readable message with the technical detail for a report. */
     fun engineError(kind: String, detail: String?): String {
         val d = detail?.trim()?.takeIf { it.isNotEmpty() && it.length < 160 }
@@ -164,9 +153,9 @@ object VideoPages {
             "unable to connect to proxy" in l -> "The site could not be reached. Check the connection (and the proxy, if one is set) and try again."
             "unsupported url" in l -> "No video found on this page."
             "anti-bot" in l || "cloudflare" in l ->
-                "This site checks that a real browser is visiting. Open the page in the app's Browser tab, play the video, then download it there."
+                "This site requires browser verification. Nexonic Personal has no embedded browser; try a public media link."
             "sign in" in l || "login" in l || "log in" in l || "cookies" in l ->
-                "This video needs you to be signed in. Open it in the app's Browser tab, sign in, then download it there."
+                "This video requires sign-in. Nexonic Personal no longer provides in-app browser cookies."
             "private" in l -> "This video is private."
             "not available" in l || "unavailable" in l -> "This video is not available."
             "unable to download webpage" in l || "network" in l || "timed out" in l -> "Could not reach the site. Check the connection and try again."

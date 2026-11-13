@@ -149,9 +149,6 @@ class Settings(context: Context) {
         set(v) = p.edit().putString("customCategories", com.nexonic.downloadmanager.core.CustomCategory.toLines(com.nexonic.downloadmanager.core.CustomCategory.clean(v))).apply()
     var scheduleEnabled: Boolean get() = p.getBoolean("scheduleEnabled", false); set(v) = p.edit().putBoolean("scheduleEnabled", v).apply()
     var scheduleMinutes: Int get() = p.getInt("scheduleMinutes", 2 * 60); set(v) = p.edit().putInt("scheduleMinutes", v.coerceIn(0, 24 * 60 - 1)).apply()
-    var blockThirdPartyCookies: Boolean get() = p.getBoolean("block3p", true); set(v) = p.edit().putBoolean("block3p", v).apply()
-    var homePage: String get() = p.getString("home", "https://duckduckgo.com/") ?: "https://duckduckgo.com/"; set(v) = p.edit().putString("home", v).apply()
-    var searchEngine: String get() = p.getString("searchEngine", "duckduckgo") ?: "duckduckgo"; set(v) = p.edit().putString("searchEngine", v).apply()
     var notifyFinished: Boolean get() = p.getBoolean("notifyFinished", true); set(v) = p.edit().putBoolean("notifyFinished", v).apply()
     var notifyFailed: Boolean get() = p.getBoolean("notifyFailed", true); set(v) = p.edit().putBoolean("notifyFailed", v).apply()
     /** A folder chosen with the system picker (SD card, USB drive…); null = the phone's Downloads folder. */
@@ -186,18 +183,6 @@ class Settings(context: Context) {
         com.nexonic.downloadmanager.core.Format.dateStyle = dateStyle
     }
     var torrentsEnabled: Boolean get() = p.getBoolean("torrents", false); set(v) = p.edit().putBoolean("torrents", v).apply()
-}
-
-/** The browser's bookmarks (bookmarks.txt in the app's private folder). */
-class BookmarkStore(context: Context) {
-    private val file = File(context.filesDir, "bookmarks.txt")
-
-    fun load(): List<com.nexonic.downloadmanager.core.Bookmarks.Bookmark> =
-        runCatching { com.nexonic.downloadmanager.core.Bookmarks.parse(file.readText()) }.getOrDefault(emptyList())
-
-    fun save(list: List<com.nexonic.downloadmanager.core.Bookmarks.Bookmark>) {
-        runCatching { file.writeAtomically(com.nexonic.downloadmanager.core.Bookmarks.format(list)) }
-    }
 }
 
 /** Finished files go to the phone's public Downloads folder (Download/Nexonic/<type>), visible in the Files app. */
